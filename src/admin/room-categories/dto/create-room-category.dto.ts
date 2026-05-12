@@ -24,14 +24,20 @@ export class CreateRoomCategoryDto {
   capacity: number;
 
   @IsOptional()
-  @IsUrl({}, { message: 'Thumbnail URL phải là một URL hợp lệ' })
+  @IsString({ message: 'Thumbnail URL phải là chuỗi hợp lệ' })
   thumbnail_url?: string;
 
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   @Transform(({ value }) => {
-    if (typeof value === 'string') return [value];
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {}
+      return [value];
+    }
     return Array.isArray(value) ? value : [];
   })
   amenities?: string[];
@@ -40,4 +46,19 @@ export class CreateRoomCategoryDto {
   @IsBoolean()
   @Transform(({ value }) => value === 'true' || value === true)
   is_active?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {}
+      return [value];
+    }
+    return Array.isArray(value) ? value : [];
+  })
+  gallery_images?: string[];
 }

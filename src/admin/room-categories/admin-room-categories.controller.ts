@@ -1,7 +1,7 @@
 import { 
   Controller, Post, Body, Get, Put, Patch, Param, ParseUUIDPipe, UseGuards, HttpCode, HttpStatus, UseInterceptors, UploadedFiles, Delete 
 } from '@nestjs/common';
-import { FilesInterceptor } from '@nestjs/platform-express';
+import { FilesInterceptor, FileFieldsInterceptor } from '@nestjs/platform-express';
 import { AdminRoomCategoriesService } from './admin-room-categories.service';
 import { CreateRoomCategoryDto } from './dto/create-room-category.dto';
 import { UpdateRoomCategoryDto } from './dto/update-room-category.dto';
@@ -15,12 +15,10 @@ export class AdminRoomCategoriesController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @UseInterceptors(FilesInterceptor('images', 10, multerOptions))
   async createCategory(
     @Body() createDto: CreateRoomCategoryDto,
-    @UploadedFiles() files: Express.Multer.File[]
   ) {
-    const data = await this.categoriesService.createCategory(createDto, files);
+    const data = await this.categoriesService.createCategory(createDto);
     return {
       message: 'Room category created successfully',
       data,
@@ -31,12 +29,23 @@ export class AdminRoomCategoriesController {
   async getCategories() {
     const data = await this.categoriesService.getCategories();
     return {
+      success: true,
       message: 'Room categories retrieved successfully',
       data,
     };
   }
 
-  @Put(':id')
+  @Get(':id')
+  async getCategoryById(@Param('id', ParseUUIDPipe) id: string) {
+    const data = await this.categoriesService.getCategoryById(id);
+    return {
+      success: true,
+      message: 'Room category retrieved successfully',
+      data,
+    };
+  }
+
+  @Patch(':id')
   async updateCategory(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateDto: UpdateRoomCategoryDto,
@@ -57,24 +66,16 @@ export class AdminRoomCategoriesController {
     };
   }
 
-  // Bonus
-  @Delete('images/:imageId')
-  async deleteImage(@Param('imageId', ParseUUIDPipe) imageId: string) {
-    await this.categoriesService.deleteImage(imageId);
-    return {
-      message: 'Image deleted successfully',
-    };
-  }
-
-  @Patch(':categoryId/thumbnail/:imageId')
-  async setThumbnail(
-    @Param('categoryId', ParseUUIDPipe) categoryId: string,
-    @Param('imageId', ParseUUIDPipe) imageId: string
+  @Post('upload')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(FilesInterceptor('images', 10, multerOptions))
+  async uploadImages(
+    @UploadedFiles() files: Express.Multer.File[]
   ) {
-    const data = await this.categoriesService.setThumbnail(categoryId, imageId);
+    const urls = files.map(file => `/uploads/room-categories/${file.filename}`);
     return {
-      message: 'Thumbnail updated successfully',
-      data,
+      message: 'Images uploaded successfully',
+      urls,
     };
   }
 }

@@ -13,7 +13,6 @@ export class PublicRoomsService {
   async getCategories() {
     const categories = await this.categoryRepository
       .createQueryBuilder('category')
-      .leftJoinAndSelect('category.images', 'images')
       .leftJoinAndSelect('category.rooms', 'rooms')
       .where('category.is_active = :isActive', { isActive: true })
       .getMany();
@@ -42,7 +41,6 @@ export class PublicRoomsService {
   async getCategoryById(id: string) {
     const category = await this.categoryRepository
       .createQueryBuilder('category')
-      .leftJoinAndSelect('category.images', 'images')
       .leftJoinAndSelect('category.rooms', 'rooms')
       .where('category.id = :id', { id })
       .andWhere('category.is_active = :isActive', { isActive: true })

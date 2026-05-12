@@ -8,7 +8,7 @@ export class RoomCategory {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column()
+  @Column({ type: 'varchar' })
   name: string;
 
   @Column({ type: 'text', nullable: true })
@@ -20,13 +20,13 @@ export class RoomCategory {
   @Column('int')
   capacity: number;
 
-  @Column({ nullable: true })
-  thumbnail_url: string;
+  @Column({ type: 'varchar', nullable: true })
+  thumbnail_url: string | null;
 
   @Column('jsonb', { default: [] })
   amenities: string[];
 
-  @Column({ default: true })
+  @Column({ type: 'boolean', default: true })
   is_active: boolean;
 
   @OneToMany(() => Room, (room) => room.category)
@@ -34,6 +34,8 @@ export class RoomCategory {
 
   @OneToMany(() => Booking, (booking) => booking.room_category)
   bookings: Booking[];
+  @Column('text', { array: true, default: [] })
+  gallery_images: string[];
 
   @OneToMany(() => RoomCategoryImage, (image) => image.roomCategory, { cascade: true })
   images: RoomCategoryImage[];

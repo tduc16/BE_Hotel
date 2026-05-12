@@ -16,7 +16,7 @@ export const multerOptions = {
   },
   storage: multer.diskStorage({
     destination: (req: any, file: any, cb: any) => {
-      const uploadPath = join(__dirname, '..', '..', 'uploads', 'room-categories');
+      const uploadPath = join(process.cwd(), 'uploads', 'room-categories');
       if (!existsSync(uploadPath)) {
         mkdirSync(uploadPath, { recursive: true });
       }
@@ -33,7 +33,9 @@ export const multerOptions = {
 export class UploadService {
   deleteFile(filePath: string) {
     try {
-      const fullPath = join(__dirname, '..', '..', filePath);
+      // Remove leading slash to prevent path.join issues on some OS
+      const relativePath = filePath.replace(/^\/+/, '');
+      const fullPath = join(process.cwd(), relativePath);
       if (existsSync(fullPath)) {
         unlinkSync(fullPath);
       }

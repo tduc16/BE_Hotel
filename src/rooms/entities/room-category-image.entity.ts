@@ -6,19 +6,19 @@ export class RoomCategoryImage {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column('uuid')
+  @Column({ type: 'text' })
+  image_url: string;
+
+  @Column({ name: 'is_thumbnail', type: 'boolean', default: false })
+  is_thumbnail: boolean;
+
+  @Column({ name: 'room_category_id' })
   room_category_id: string;
+
+  @CreateDateColumn({ name: 'created_at' })
+  created_at: Date;
 
   @ManyToOne(() => RoomCategory, (category) => category.images, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'room_category_id' })
   roomCategory: RoomCategory;
-
-  @Column()
-  image_url: string;
-
-  @Column({ default: false })
-  is_thumbnail: boolean;
-
-  @CreateDateColumn()
-  created_at: Date;
 }
