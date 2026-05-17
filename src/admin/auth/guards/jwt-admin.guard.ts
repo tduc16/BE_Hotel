@@ -18,15 +18,38 @@ export class JwtAdminGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const token = this.extractTokenFromHeader(request);
+    
+    console.log('--- ADMIN AUTH DEBUG ---');
+    console.log('Headers:', request.headers);
+    console.log('Extracted Token:', token);
+
     if (!token) {
-      throw new UnauthorizedException('Không tìm thấy token đăng nhập');
+      console.log('=> Admin token missing');
+      throw new UnauthorizedException('Admin token missing');
     }
+    
     try {
       const payload = await this.jwtService.verifyAsync(token, {
         secret: this.configService.get<string>('JWT_SECRET'),
       });
+      
+      console.log('Decoded Payload:', payload);
+      console.log('User Role:', payload?.role);
+      
+      // Gán payload vào cả user (để chuẩn hóa) và admin
+      request['user'] = payload;
       request['admin'] = payload;
-    } catch {
+      
+      console.log('Request User Object:', request.user);
+      console.log('------------------------');
+      
+      // Kiểm tra role (nếu cần)
+      if (payload.role !== 'SUPER_ADMIN' && payload.role !== 'MANAGER') {
+        throw new UnauthorizedException('Require admin role');
+      }
+      
+    } catch (error) {
+      console.error('JWT Verification Error:', error.message);
       throw new UnauthorizedException('Token đăng nhập không hợp lệ hoặc đã hết hạn');
     }
     return true;

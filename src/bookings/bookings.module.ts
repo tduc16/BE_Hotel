@@ -4,11 +4,12 @@ import { BookingsController } from './bookings.controller';
 import { BookingsService } from './bookings.service';
 import { BookingCronService } from './cron.service';
 import { Booking } from './entities/booking.entity';
+import { BookingHistory } from './entities/booking-history.entity';
 import { RoomCategory } from '../rooms/entities/room-category.entity';
 import { Room } from '../rooms/entities/room.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Booking, RoomCategory, Room])],
+  imports: [TypeOrmModule.forFeature([Booking, BookingHistory, RoomCategory, Room])],
   controllers: [BookingsController],
   providers: [BookingsService, BookingCronService],
   exports: [BookingsService],

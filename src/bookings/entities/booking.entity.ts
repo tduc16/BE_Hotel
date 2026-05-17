@@ -1,6 +1,7 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
 import { RoomCategory } from '../../rooms/entities/room-category.entity';
 import { Room } from '../../rooms/entities/room.entity';
+import { BookingHistory } from './booking-history.entity';
 
 export enum PaymentMethod {
   CASH = 'CASH',
@@ -92,4 +93,7 @@ export class Booking {
 
   @UpdateDateColumn()
   updated_at: Date;
+
+  @OneToMany(() => BookingHistory, history => history.booking)
+  histories: BookingHistory[];
 }

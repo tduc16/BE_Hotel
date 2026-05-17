@@ -17,11 +17,12 @@ import { AdminRoomCategoriesService } from './room-categories/admin-room-categor
 import { AdminBookingsController } from './bookings/admin-bookings.controller';
 import { AdminBookingsService } from './bookings/admin-bookings.service';
 import { Booking } from '../bookings/entities/booking.entity';
+import { BookingHistory } from '../bookings/entities/booking-history.entity';
 import { UploadModule } from '../upload/upload.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Admin, Room, RoomCategory, RoomCategoryImage, Booking]),
+    TypeOrmModule.forFeature([Admin, Room, RoomCategory, RoomCategoryImage, Booking, BookingHistory]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
