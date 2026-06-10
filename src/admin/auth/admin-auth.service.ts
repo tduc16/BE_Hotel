@@ -13,16 +13,13 @@ export class AdminAuthService {
     @InjectRepository(Admin)
     private readonly adminRepository: Repository<Admin>,
     private readonly jwtService: JwtService,
-  ) { }
+  ) {}
 
   async login(loginDto: LoginDto) {
     const { username, password } = loginDto;
 
     const admin = await this.adminRepository.findOne({
-      where: [
-        { username: username },
-        { email: username }
-      ],
+      where: [{ username: username }, { email: username }],
     });
 
     if (!admin) {

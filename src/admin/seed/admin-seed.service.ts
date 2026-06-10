@@ -19,10 +19,10 @@ export class AdminSeedService implements OnApplicationBootstrap {
 
   private async seedAdmin() {
     const adminCount = await this.adminRepository.count();
-    
+
     if (adminCount === 0) {
       this.logger.log('Không tìm thấy Admin, đang tạo Admin mặc định...');
-      
+
       const saltOrRounds = 10;
       const hashedPassword = await bcrypt.hash('123456', saltOrRounds);
 
@@ -34,7 +34,9 @@ export class AdminSeedService implements OnApplicationBootstrap {
       });
 
       await this.adminRepository.save(defaultAdmin);
-      this.logger.log('Đã tạo thành công Admin mặc định: username "admin", password "123456"');
+      this.logger.log(
+        'Đã tạo thành công Admin mặc định: username "admin", password "123456"',
+      );
     } else {
       this.logger.log('Đã có dữ liệu Admin, bỏ qua bước seeder.');
     }

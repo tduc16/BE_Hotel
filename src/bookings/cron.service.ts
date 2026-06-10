@@ -19,8 +19,9 @@ export class BookingCronService {
 
     try {
       const now = new Date();
-      
-      const result = await this.bookingRepo.createQueryBuilder()
+
+      const result = await this.bookingRepo
+        .createQueryBuilder()
         .update(Booking)
         .set({ booking_status: BookingStatus.EXPIRED })
         .where('booking_status = :status', { status: BookingStatus.PENDING })
@@ -28,7 +29,9 @@ export class BookingCronService {
         .execute();
 
       if (result.affected && result.affected > 0) {
-        this.logger.log(`Expired ${result.affected} pending booking(s) automatically.`);
+        this.logger.log(
+          `Expired ${result.affected} pending booking(s) automatically.`,
+        );
       }
     } catch (error) {
       this.logger.error('Failed to cleanup expired bookings', error);

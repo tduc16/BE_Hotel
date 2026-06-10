@@ -19,10 +19,19 @@ import { AdminBookingsService } from './bookings/admin-bookings.service';
 import { Booking } from '../bookings/entities/booking.entity';
 import { BookingHistory } from '../bookings/entities/booking-history.entity';
 import { UploadModule } from '../upload/upload.module';
+import { CustomerModule } from '../customer/customer.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Admin, Room, RoomCategory, RoomCategoryImage, Booking, BookingHistory]),
+    CustomerModule,
+    TypeOrmModule.forFeature([
+      Admin,
+      Room,
+      RoomCategory,
+      RoomCategoryImage,
+      Booking,
+      BookingHistory,
+    ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
@@ -35,8 +44,19 @@ import { UploadModule } from '../upload/upload.module';
     }),
     UploadModule,
   ],
-  controllers: [AdminAuthController, AdminRoomsController, AdminRoomCategoriesController, AdminBookingsController],
-  providers: [AdminAuthService, AdminSeedService, AdminRoomsService, AdminRoomCategoriesService, AdminBookingsService],
+  controllers: [
+    AdminAuthController,
+    AdminRoomsController,
+    AdminRoomCategoriesController,
+    AdminBookingsController,
+  ],
+  providers: [
+    AdminAuthService,
+    AdminSeedService,
+    AdminRoomsService,
+    AdminRoomCategoriesService,
+    AdminBookingsService,
+  ],
   exports: [JwtModule],
 })
-export class AdminModule { }
+export class AdminModule {}

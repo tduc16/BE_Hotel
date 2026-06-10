@@ -1,11 +1,20 @@
-import { IsNotEmpty, IsString, IsNumber, Min, IsUrl, IsOptional, IsArray, IsBoolean } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsString,
+  IsNumber,
+  Min,
+  IsUrl,
+  IsOptional,
+  IsArray,
+  IsBoolean,
+} from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 
 export class UpdateRoomCategoryDto {
   @IsOptional()
   @IsNotEmpty({ message: 'Tên hạng phòng không được để trống' })
   @IsString()
-  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   name?: string;
 
   @IsOptional()

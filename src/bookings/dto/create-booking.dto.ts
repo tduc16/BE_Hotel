@@ -1,4 +1,14 @@
-import { IsNotEmpty, IsString, IsEmail, IsOptional, IsUUID, IsInt, Min, IsEnum, Matches } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsString,
+  IsEmail,
+  IsOptional,
+  IsUUID,
+  IsInt,
+  Min,
+  IsEnum,
+  Matches,
+} from 'class-validator';
 import { PaymentMethod } from '../entities/booking.entity';
 
 export class CreateBookingDto {
@@ -8,7 +18,9 @@ export class CreateBookingDto {
 
   @IsNotEmpty({ message: 'Số điện thoại không được để trống' })
   @IsString()
-  @Matches(/^(0[3|5|7|8|9])+([0-9]{8})\b/, { message: 'Số điện thoại không hợp lệ' })
+  @Matches(/^(0[3|5|7|8|9])+([0-9]{8})\b/, {
+    message: 'Số điện thoại không hợp lệ',
+  })
   phone: string;
 
   @IsNotEmpty({ message: 'Email không được để trống' })
@@ -25,12 +37,16 @@ export class CreateBookingDto {
 
   @IsNotEmpty({ message: 'Ngày nhận phòng không được để trống' })
   @IsString()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Ngày nhận phòng phải theo định dạng YYYY-MM-DD' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'Ngày nhận phòng phải theo định dạng YYYY-MM-DD',
+  })
   check_in_date: string;
 
   @IsNotEmpty({ message: 'Ngày trả phòng không được để trống' })
   @IsString()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Ngày trả phòng phải theo định dạng YYYY-MM-DD' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'Ngày trả phòng phải theo định dạng YYYY-MM-DD',
+  })
   check_out_date: string;
 
   @IsNotEmpty({ message: 'Số khách không được để trống' })

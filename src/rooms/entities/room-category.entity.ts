@@ -32,11 +32,13 @@ export class RoomCategory {
   @OneToMany(() => Room, (room) => room.category)
   rooms: Room[];
 
-  @OneToMany(() => Booking, (booking) => booking.room_category)
+  @OneToMany(() => Booking, (booking) => booking.roomCategory)
   bookings: Booking[];
   @Column('text', { array: true, default: [] })
   gallery_images: string[];
 
-  @OneToMany(() => RoomCategoryImage, (image) => image.roomCategory, { cascade: true })
+  @OneToMany(() => RoomCategoryImage, (image) => image.roomCategory, {
+    cascade: true,
+  })
   images: RoomCategoryImage[];
 }

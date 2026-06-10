@@ -1,28 +1,19 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToOne,
+  OneToMany,
+  JoinColumn,
+} from 'typeorm';
 import { RoomCategory } from '../../rooms/entities/room-category.entity';
 import { Room } from '../../rooms/entities/room.entity';
 import { BookingHistory } from './booking-history.entity';
+import { PaymentMethod, PaymentStatus, BookingStatus } from './booking.enums';
 
-export enum PaymentMethod {
-  CASH = 'CASH',
-  BANK_TRANSFER = 'BANK_TRANSFER',
-  EWALLET = 'EWALLET',
-}
-
-export enum PaymentStatus {
-  UNPAID = 'UNPAID',
-  PAID = 'PAID',
-  REFUNDED = 'REFUNDED',
-}
-
-export enum BookingStatus {
-  PENDING = 'PENDING',
-  CONFIRMED = 'CONFIRMED',
-  CHECKED_IN = 'CHECKED_IN',
-  CHECKED_OUT = 'CHECKED_OUT',
-  CANCELLED = 'CANCELLED',
-  EXPIRED = 'EXPIRED',
-}
+export { PaymentMethod, PaymentStatus, BookingStatus };
 
 @Entity('bookings')
 export class Booking {
@@ -31,6 +22,9 @@ export class Booking {
 
   @Column({ unique: true })
   booking_code: string;
+
+  @Column({ type: 'uuid', unique: true, nullable: true })
+  booking_token: string;
 
   @Column()
   customer_name: string;
@@ -47,14 +41,14 @@ export class Booking {
   @Column()
   room_category_id: string;
 
-  @ManyToOne(() => RoomCategory, category => category.bookings)
+  @ManyToOne(() => RoomCategory, (category) => category.bookings)
   @JoinColumn({ name: 'room_category_id' })
-  room_category: RoomCategory;
+  roomCategory: RoomCategory;
 
   @Column({ nullable: true })
   room_id: string;
 
-  @ManyToOne(() => Room, room => room.bookings, { nullable: true })
+  @ManyToOne(() => Room, (room) => room.bookings, { nullable: true })
   @JoinColumn({ name: 'room_id' })
   room: Room;
 
@@ -88,12 +82,20 @@ export class Booking {
   @Column({ type: 'timestamp', nullable: true })
   expired_at: Date;
 
+  @Column({ name: 'customer_id', type: 'uuid', nullable: true })
+  customerId: string | null;
+
+  @ManyToOne('Customer', 'bookings', { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'customer_id' })
+  customer: any;
+
   @CreateDateColumn()
   created_at: Date;
 
   @UpdateDateColumn()
   updated_at: Date;
 
-  @OneToMany(() => BookingHistory, history => history.booking)
+  @OneToMany(() => BookingHistory, (history) => history.booking)
   histories: BookingHistory[];
 }
+

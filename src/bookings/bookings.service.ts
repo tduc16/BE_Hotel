@@ -1,10 +1,22 @@
-import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, EntityManager } from 'typeorm';
-import { Booking, BookingStatus, PaymentMethod, PaymentStatus } from './entities/booking.entity';
+import { Repository, DataSource } from 'typeorm';
+import {
+  Booking,
+  BookingStatus,
+  PaymentMethod,
+  PaymentStatus,
+} from './entities/booking.entity';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { RoomCategory } from '../rooms/entities/room-category.entity';
 import { Room } from '../rooms/entities/room.entity';
+import { MailService } from '../mail/mail.service';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class BookingsService {
@@ -16,6 +28,7 @@ export class BookingsService {
     @InjectRepository(RoomCategory)
     private roomCategoryRepo: Repository<RoomCategory>,
     private dataSource: DataSource,
+    private mailService: MailService,
   ) {}
 
   /**
@@ -44,75 +57,8 @@ export class BookingsService {
    *
    * @throws BadRequestException nếu có overlap
    */
-  private async checkOverlapBookings(
-    manager: EntityManager,
-    roomCategoryId: string,
-    checkInDate: string,
-    checkOutDate: string,
-    excludeBookingId?: string,
-  ): Promise<void> {
-    const normalizedCheckIn  = this.normalizeDateString(checkInDate);
-    const normalizedCheckOut = this.normalizeDateString(checkOutDate);
 
-    this.logger.log(
-      `[OverlapCheck] roomCategoryId=${roomCategoryId} | range=${normalizedCheckIn} → ${normalizedCheckOut}`,
-    );
-
-    const ACTIVE_STATUSES = [
-      BookingStatus.PENDING,
-      BookingStatus.CONFIRMED,
-      BookingStatus.CHECKED_IN,
-    ];
-
-    let qb = manager
-      .createQueryBuilder(Booking, 'booking')
-      .select(['booking.id', 'booking.booking_code', 'booking.check_in_date', 'booking.check_out_date', 'booking.booking_status'])
-      .where('booking.room_category_id = :categoryId', { categoryId: roomCategoryId })
-      .andWhere('booking.booking_status IN (:...statuses)', { statuses: ACTIVE_STATUSES })
-      // Điều kiện overlap chuẩn: new.checkIn < old.checkOut AND new.checkOut > old.checkIn
-      .andWhere('booking.check_in_date  < :checkOutDate', { checkOutDate: normalizedCheckOut })
-      .andWhere('booking.check_out_date > :checkInDate',  { checkInDate:  normalizedCheckIn  });
-
-    // Khi cập nhật booking, loại trừ chính nó khỏi kiểm tra
-    if (excludeBookingId) {
-      qb = qb.andWhere('booking.id != :excludeId', { excludeId: excludeBookingId });
-    }
-
-    const overlappingBookings = await qb.getMany();
-
-    if (overlappingBookings.length > 0) {
-      const overlapIds   = overlappingBookings.map((b) => b.id);
-      const overlapCodes = overlappingBookings.map((b) => b.booking_code);
-
-      this.logger.warn(
-        `[OverlapCheck] CONFLICT detected! roomCategoryId=${roomCategoryId} | range=${normalizedCheckIn} → ${normalizedCheckOut} | overlapBookingIds=[${overlapIds.join(', ')}] | codes=[${overlapCodes.join(', ')}]`,
-      );
-
-      throw new BadRequestException({
-        statusCode: 400,
-        error: 'Bad Request',
-        message: 'Phòng đã được đặt trong khoảng thời gian này',
-        details: {
-          roomCategoryId,
-          requestedCheckIn:  normalizedCheckIn,
-          requestedCheckOut: normalizedCheckOut,
-          conflictingBookings: overlappingBookings.map((b) => ({
-            id:            b.id,
-            booking_code:  b.booking_code,
-            check_in_date: this.normalizeDateString(b.check_in_date),
-            check_out_date: this.normalizeDateString(b.check_out_date),
-            status:        b.booking_status,
-          })),
-        },
-      });
-    }
-
-    this.logger.log(
-      `[OverlapCheck] No conflict. roomCategoryId=${roomCategoryId} | range=${normalizedCheckIn} → ${normalizedCheckOut}`,
-    );
-  }
-
-  async createBooking(createBookingDto: CreateBookingDto) {
+  async createBooking(createBookingDto: CreateBookingDto, customerId: string | null = null) {
     const {
       customer_name,
       phone,
@@ -140,14 +86,20 @@ export class BookingsService {
     today.setHours(0, 0, 0, 0);
 
     if (checkIn < today) {
-      throw new BadRequestException('Ngày nhận phòng không thể nằm trong quá khứ');
-    }
-    
-    if (checkOut <= checkIn) {
-      throw new BadRequestException('Ngày trả phòng phải lớn hơn ngày nhận phòng');
+      throw new BadRequestException(
+        'Ngày nhận phòng không thể nằm trong quá khứ',
+      );
     }
 
-    const nightCount = Math.round((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24));
+    if (checkOut <= checkIn) {
+      throw new BadRequestException(
+        'Ngày trả phòng phải lớn hơn ngày nhận phòng',
+      );
+    }
+
+    const nightCount = Math.round(
+      (checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24),
+    );
 
     if (nightCount < 1) {
       throw new BadRequestException('Số đêm phải lớn hơn hoặc bằng 1');
@@ -160,7 +112,7 @@ export class BookingsService {
     try {
       // 1. Lấy thông tin category
       const category = await queryRunner.manager.findOne(RoomCategory, {
-        where: { id: room_category_id }
+        where: { id: room_category_id },
       });
 
       if (!category) {
@@ -179,7 +131,9 @@ export class BookingsService {
       });
 
       if (guest_count < 1) {
-        throw new BadRequestException('Số lượng khách phải lớn hơn hoặc bằng 1');
+        throw new BadRequestException(
+          'Số lượng khách phải lớn hơn hoặc bằng 1',
+        );
       }
 
       if (guest_count > category.capacity) {
@@ -207,100 +161,115 @@ export class BookingsService {
         guestCount: guest_count,
       });
 
-      // 3. Kiểm tra overlap booking — chống trùng lịch
-      // Logic: booking mới overlap booking cũ khi:
-      //   newCheckIn < oldCheckOut AND newCheckOut > oldCheckIn
-      // Chỉ xét: PENDING, CONFIRMED, CHECKED_IN
-      // Bỏ qua: CANCELLED, CHECKED_OUT, EXPIRED
-      const normalizedCheckIn  = this.normalizeDateString(check_in_date);
+      // 3. Kiểm tra overlap booking — chống trùng lịch và tính availability
+      const normalizedCheckIn = this.normalizeDateString(check_in_date);
       const normalizedCheckOut = this.normalizeDateString(check_out_date);
 
-      // Đếm phòng thực tế khả dụng (không MAINTENANCE)
+      // Đếm tổng số phòng thực tế khả dụng của hạng phòng (không MAINTENANCE)
       const totalRoomsCount = await queryRunner.manager.count(Room, {
-        where: { category: { id: room_category_id } }
+        where: { category: { id: room_category_id } },
       });
       const maintenanceRoomsCount = await queryRunner.manager.count(Room, {
-        where: { category: { id: room_category_id }, status: 'MAINTENANCE' }
+        where: { category: { id: room_category_id }, status: 'MAINTENANCE' },
       });
       const activeRoomsCount = totalRoomsCount - maintenanceRoomsCount;
 
-      this.logger.log(
-        `[BookingCreate] roomCategoryId=${room_category_id} | totalRooms=${totalRoomsCount} | maintenanceRooms=${maintenanceRoomsCount} | activeRooms=${activeRoomsCount}`,
-      );
-
-      // Đếm số booking đang chiếm dụng trong khoảng thời gian này
-      const occupiedBookingsCount = await queryRunner.manager
+      // Lấy danh sách các booking trùng lịch trong hạng phòng này
+      const overlappingBookings = await queryRunner.manager
         .createQueryBuilder(Booking, 'booking')
-        .where('booking.room_category_id = :categoryId', { categoryId: room_category_id })
-        .andWhere('booking.booking_status IN (:...statuses)', {
-          statuses: [BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN],
+        .select(['booking.id', 'booking.room_id', 'booking.booking_code'])
+        .where('booking.room_category_id = :categoryId', {
+          categoryId: room_category_id,
         })
-        .andWhere('booking.check_in_date  < :checkOutDate', { checkOutDate: normalizedCheckOut })
-        .andWhere('booking.check_out_date > :checkInDate',  { checkInDate:  normalizedCheckIn  })
-        .getCount();
+        .andWhere('booking.booking_status IN (:...statuses)', {
+          statuses: [
+            BookingStatus.PENDING,
+            BookingStatus.CONFIRMED,
+            BookingStatus.CHECKED_IN,
+          ],
+        })
+        .andWhere('booking.check_in_date  < :checkOutDate', {
+          checkOutDate: normalizedCheckOut,
+        })
+        .andWhere('booking.check_out_date > :checkInDate', {
+          checkInDate: normalizedCheckIn,
+        })
+        .getMany();
+
+      const bookedRoomsCount = overlappingBookings.length;
+      const availableRoomsCount = activeRoomsCount - bookedRoomsCount;
 
       this.logger.log(
-        `[BookingCreate] occupiedBookings=${occupiedBookingsCount} | availableRooms=${activeRoomsCount - occupiedBookingsCount}`,
+        `[AvailabilityCheck] roomCategoryId=${room_category_id} | totalActiveRooms=${activeRoomsCount} | bookedRooms=${bookedRoomsCount} | availableRooms=${availableRoomsCount}`,
       );
 
-      const availableRooms = activeRoomsCount - occupiedBookingsCount;
-
-      if (availableRooms <= 0) {
-        // Gọi checkOverlapBookings để lấy chi tiết booking trùng + log đầy đủ
-        await this.checkOverlapBookings(
-          queryRunner.manager,
-          room_category_id,
-          normalizedCheckIn,
-          normalizedCheckOut,
-        );
-        // Nếu có phòng nhưng tất cả bị chiếm (trường hợp hiếm)
+      if (availableRoomsCount <= 0) {
         throw new BadRequestException({
           statusCode: 400,
           error: 'Bad Request',
-          message: 'Phòng đã được đặt trong khoảng thời gian này',
+          message: 'Hết phòng trong khoảng thời gian này',
           details: {
             roomCategoryId: room_category_id,
             requestedCheckIn: normalizedCheckIn,
             requestedCheckOut: normalizedCheckOut,
+            totalActiveRooms: activeRoomsCount,
+            bookedRooms: bookedRoomsCount,
+            availableRooms: availableRoomsCount,
           },
         });
       }
 
-      // 4. Auto assign room_id — tìm phòng thực tế chưa bị trùng lịch
-      const occupiedRoomsSubQuery = queryRunner.manager
-        .createQueryBuilder(Booking, 'b')
-        .select('b.room_id')
-        .where('b.room_category_id = :categoryId',       { categoryId: room_category_id })
-        .andWhere('b.booking_status IN (:...statuses)',   {
-          statuses: [BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN],
-        })
-        .andWhere('b.check_in_date  < :checkOutDate',    { checkOutDate: normalizedCheckOut })
-        .andWhere('b.check_out_date > :checkInDate',     { checkInDate:  normalizedCheckIn  })
-        .andWhere('b.room_id IS NOT NULL');
+      // 4. Auto assign room_id — tìm phòng thực tế chưa bị trùng lịch để gán cho booking mới
+      const occupiedRoomIds = overlappingBookings
+        .map((b) => b.room_id)
+        .filter((id) => id != null);
 
-      const availableRoom = await queryRunner.manager
+      let availableRoomQuery = queryRunner.manager
         .createQueryBuilder(Room, 'room')
-        .where('room.category_id = :categoryId',         { categoryId: room_category_id })
-        .andWhere('room.status != :maintenance',          { maintenance: 'MAINTENANCE' })
-        .andWhere(`room.id NOT IN (${occupiedRoomsSubQuery.getQuery()})`)
-        .setParameters(occupiedRoomsSubQuery.getParameters())
-        .getOne();
+        .where('room.category_id = :categoryId', {
+          categoryId: room_category_id,
+        })
+        .andWhere('room.status != :maintenance', {
+          maintenance: 'MAINTENANCE',
+        });
 
-      const assignedRoomId = availableRoom ? availableRoom.id : null;
+      if (occupiedRoomIds.length > 0) {
+        availableRoomQuery = availableRoomQuery.andWhere(
+          'room.id NOT IN (:...occupiedRoomIds)',
+          { occupiedRoomIds },
+        );
+      }
+
+      const availableRoom = await availableRoomQuery.getOne();
+
+      if (!availableRoom) {
+        // Fallback an toàn (trường hợp DB không nhất quán)
+        throw new BadRequestException(
+          'Hết phòng trong khoảng thời gian này (không tìm thấy phòng trống vật lý)',
+        );
+      }
+
+      const assignedRoomId = availableRoom.id;
       this.logger.log(
-        `[BookingCreate] autoAssign roomId=${assignedRoomId ?? 'null (category-level booking)'}`,
+        `[BookingCreate] Assigned room_id=${assignedRoomId} cho booking mới`,
       );
 
       // Lấy booking sequence để gen code
       const currentYear = new Date().getFullYear();
       let newSequence = 1;
-      const lastBooking = await queryRunner.manager.createQueryBuilder(Booking, 'booking')
-        .where('booking.booking_code LIKE :pattern', { pattern: `BK${currentYear}%` })
+      const lastBooking = await queryRunner.manager
+        .createQueryBuilder(Booking, 'booking')
+        .where('booking.booking_code LIKE :pattern', {
+          pattern: `BK${currentYear}%`,
+        })
         .orderBy('booking.created_at', 'DESC')
         .getOne();
 
       if (lastBooking) {
-        const lastSeq = parseInt(lastBooking.booking_code.replace(`BK${currentYear}`, ''), 10);
+        const lastSeq = parseInt(
+          lastBooking.booking_code.replace(`BK${currentYear}`, ''),
+          10,
+        );
         if (!isNaN(lastSeq)) {
           newSequence = lastSeq + 1;
         }
@@ -309,7 +278,7 @@ export class BookingsService {
 
       // 5. Xác định Status
       let finalBookingStatus = BookingStatus.PENDING;
-      let finalPaymentStatus = PaymentStatus.UNPAID;
+      const finalPaymentStatus = PaymentStatus.UNPAID;
       let expiredAt: Date | null = null;
 
       if (payment_method === PaymentMethod.CASH) {
@@ -321,9 +290,16 @@ export class BookingsService {
         expiredAt.setMinutes(expiredAt.getMinutes() + 15); // +15 phút
       }
 
+      console.log('--- START CREATE BOOKING ---');
+      console.log('DTO:', createBookingDto);
+
+      // Generate booking_token (UUID v4) — dùng cho link quản lý booking không cần đăng nhập
+      const bookingToken = randomUUID();
+
       const newBooking = new Booking();
       Object.assign(newBooking, {
         booking_code: bookingCode,
+        booking_token: bookingToken,
         customer_name,
         phone,
         email,
@@ -339,16 +315,54 @@ export class BookingsService {
         payment_method,
         payment_status: finalPaymentStatus,
         booking_status: finalBookingStatus,
-        expired_at: expiredAt
+        expired_at: expiredAt,
+        customerId: customerId,
       });
 
-      await queryRunner.manager.save(newBooking);
+      console.log('--- BEFORE SAVE BOOKING ---');
+      console.log(newBooking);
+
+      let savedBooking;
+      try {
+        savedBooking = await queryRunner.manager.save(newBooking);
+        console.log('--- AFTER SAVE BOOKING ---');
+        console.log(savedBooking);
+      } catch (saveError) {
+        console.error('--- SAVE BOOKING ERROR ---', saveError);
+        throw new BadRequestException(
+          'Lỗi khi lưu thông tin đặt phòng vào CSDL',
+        );
+      }
+
       await queryRunner.commitTransaction();
 
-      return newBooking;
+      // Gửi email xác nhận sau khi commit transaction thành công
+      // Không await để không block response — lỗi mail sẽ chỉ được log
+      this.mailService
+        .sendBookingConfirmation({
+          customerName: customer_name,
+          email,
+          bookingCode,
+          bookingToken,
+          roomName: category.name,
+          roomNumber: availableRoom.room_number ?? undefined,
+          checkInDate: check_in_date,
+          checkOutDate: check_out_date,
+          guestCount: guest_count,
+          nightCount,
+          totalAmount,
+          paymentMethod: payment_method,
+          paymentStatus: finalPaymentStatus,
+          bookingStatus: finalBookingStatus,
+        })
+        .catch((err) =>
+          this.logger.error('[MAIL_ASYNC_ERROR] Lỗi gửi email xác nhận booking:', err),
+        );
 
+      return savedBooking;
     } catch (error) {
       await queryRunner.rollbackTransaction();
+      console.error('--- CREATE BOOKING TRANSACTION ROLLBACK ---', error);
       throw error;
     } finally {
       await queryRunner.release();
@@ -356,8 +370,9 @@ export class BookingsService {
   }
 
   async getBookingByCode(booking_code: string) {
-    const booking = await this.bookingRepo.createQueryBuilder('booking')
-      .leftJoinAndSelect('booking.room_category', 'category')
+    const booking = await this.bookingRepo
+      .createQueryBuilder('booking')
+      .leftJoinAndSelect('booking.roomCategory', 'category')
       .leftJoinAndSelect('booking.room', 'room')
       .where('booking.booking_code = :booking_code', { booking_code })
       .getOne();

@@ -22,11 +22,13 @@ import { join } from 'path';
         synchronize: false,
         migrationsRun: true,
         // Chỉ định đường dẫn tìm file migration (.ts khi dev, .js khi prod)
-        migrations: [join(__dirname, '..', 'database', 'migrations', '*{.ts,.js}')],
+        migrations: [
+          join(__dirname, '..', 'database', 'migrations', '*{.ts,.js}'),
+        ],
         logging: ['error', 'migration'],
       }),
       inject: [ConfigService],
     }),
   ],
 })
-export class DbModule { }
+export class DbModule {}

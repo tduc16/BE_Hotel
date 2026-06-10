@@ -9,14 +9,22 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { UploadModule } from './upload/upload.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
+import { PublicBookingsModule } from './public-bookings/public-bookings.module';
+import { MailModule } from './mail/mail.module';
+import { CustomerAuthModule } from './customer-auth/customer-auth.module';
+import { CustomerModule } from './customer/customer.module';
 
 @Module({
   imports: [
-    DbModule, 
-    RoomsModule, 
-    AdminModule, 
-    BookingsModule, 
-    ScheduleModule.forRoot(), 
+    DbModule,
+    RoomsModule,
+    AdminModule,
+    BookingsModule,
+    PublicBookingsModule,
+    MailModule,
+    CustomerAuthModule,
+    CustomerModule,
+    ScheduleModule.forRoot(),
     UploadModule,
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'uploads'),
@@ -27,3 +35,4 @@ import { join } from 'path';
   providers: [AppService],
 })
 export class AppModule {}
+

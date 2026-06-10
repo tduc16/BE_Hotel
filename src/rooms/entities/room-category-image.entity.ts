@@ -1,4 +1,11 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  JoinColumn,
+  CreateDateColumn,
+} from 'typeorm';
 import { RoomCategory } from './room-category.entity';
 
 @Entity('room_category_images')
@@ -18,7 +25,9 @@ export class RoomCategoryImage {
   @CreateDateColumn({ name: 'created_at' })
   created_at: Date;
 
-  @ManyToOne(() => RoomCategory, (category) => category.images, { onDelete: 'CASCADE' })
+  @ManyToOne(() => RoomCategory, (category) => category.images, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'room_category_id' })
   roomCategory: RoomCategory;
 }

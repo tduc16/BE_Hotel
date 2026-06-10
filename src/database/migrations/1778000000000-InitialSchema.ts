@@ -1,4 +1,4 @@
-import { MigrationInterface, QueryRunner } from "typeorm";
+import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class InitialSchema1778000000000 implements MigrationInterface {
   name = 'InitialSchema1778000000000';
@@ -93,7 +93,9 @@ export class InitialSchema1778000000000 implements MigrationInterface {
     `);
 
     // Cần extension uuid-ossp
-    await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).catch(() => {});
+    await queryRunner
+      .query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`)
+      .catch(() => {});
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

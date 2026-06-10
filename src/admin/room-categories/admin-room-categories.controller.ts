@@ -1,7 +1,23 @@
-import { 
-  Controller, Post, Body, Get, Put, Patch, Param, ParseUUIDPipe, UseGuards, HttpCode, HttpStatus, UseInterceptors, UploadedFiles, Delete 
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  Put,
+  Patch,
+  Param,
+  ParseUUIDPipe,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+  UseInterceptors,
+  UploadedFiles,
+  Delete,
 } from '@nestjs/common';
-import { FilesInterceptor, FileFieldsInterceptor } from '@nestjs/platform-express';
+import {
+  FilesInterceptor,
+  FileFieldsInterceptor,
+} from '@nestjs/platform-express';
 import { AdminRoomCategoriesService } from './admin-room-categories.service';
 import { CreateRoomCategoryDto } from './dto/create-room-category.dto';
 import { UpdateRoomCategoryDto } from './dto/update-room-category.dto';
@@ -15,9 +31,7 @@ export class AdminRoomCategoriesController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async createCategory(
-    @Body() createDto: CreateRoomCategoryDto,
-  ) {
+  async createCategory(@Body() createDto: CreateRoomCategoryDto) {
     const data = await this.categoriesService.createCategory(createDto);
     return {
       message: 'Room category created successfully',
@@ -69,10 +83,10 @@ export class AdminRoomCategoriesController {
   @Post('upload')
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(FilesInterceptor('images', 10, multerOptions))
-  async uploadImages(
-    @UploadedFiles() files: Express.Multer.File[]
-  ) {
-    const urls = files.map(file => `/uploads/room-categories/${file.filename}`);
+  async uploadImages(@UploadedFiles() files: Express.Multer.File[]) {
+    const urls = files.map(
+      (file) => `/uploads/room-categories/${file.filename}`,
+    );
     return {
       message: 'Images uploaded successfully',
       urls,

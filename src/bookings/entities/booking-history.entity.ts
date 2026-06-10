@@ -1,5 +1,13 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
-import { Booking, BookingStatus } from './booking.entity';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  ManyToOne,
+  JoinColumn,
+} from 'typeorm';
+import { Booking } from './booking.entity';
+import { BookingStatus } from './booking.enums';
 import { Admin } from '../../admin/entities/admin.entity';
 
 @Entity('booking_histories')
@@ -24,10 +32,20 @@ export class BookingHistory {
   @Column()
   action: string;
 
-  @Column({ type: 'enum', enum: BookingStatus, enumName: 'booking_status_enum', nullable: true })
+  @Column({
+    type: 'enum',
+    enum: BookingStatus,
+    enumName: 'booking_status_enum',
+    nullable: true,
+  })
   previous_status: BookingStatus;
 
-  @Column({ type: 'enum', enum: BookingStatus, enumName: 'booking_status_enum', nullable: true })
+  @Column({
+    type: 'enum',
+    enum: BookingStatus,
+    enumName: 'booking_status_enum',
+    nullable: true,
+  })
   new_status: BookingStatus;
 
   @Column({ type: 'text', nullable: true })

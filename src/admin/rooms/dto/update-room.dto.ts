@@ -6,7 +6,9 @@ export class UpdateRoomDto {
   room_number?: string;
 
   @IsOptional()
-  @IsEnum(['AVAILABLE', 'OCCUPIED', 'MAINTENANCE'], { message: 'Status must be AVAILABLE, OCCUPIED, or MAINTENANCE' })
+  @IsEnum(['AVAILABLE', 'OCCUPIED', 'MAINTENANCE'], {
+    message: 'Status must be AVAILABLE, OCCUPIED, or MAINTENANCE',
+  })
   status?: string;
 
   @IsOptional()

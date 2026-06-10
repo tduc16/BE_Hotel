@@ -11,7 +11,12 @@ export const multerOptions = {
     if (file.mimetype.match(/\/(jpg|jpeg|png)$/)) {
       cb(null, true);
     } else {
-      cb(new BadRequestException(`Unsupported file type ${extname(file.originalname)}`), false);
+      cb(
+        new BadRequestException(
+          `Unsupported file type ${extname(file.originalname)}`,
+        ),
+        false,
+      );
     }
   },
   storage: multer.diskStorage({
@@ -23,7 +28,10 @@ export const multerOptions = {
       cb(null, uploadPath);
     },
     filename: (req: any, file: any, cb: any) => {
-      const randomName = Array(32).fill(null).map(() => (Math.round(Math.random() * 16)).toString(16)).join('');
+      const randomName = Array(32)
+        .fill(null)
+        .map(() => Math.round(Math.random() * 16).toString(16))
+        .join('');
       cb(null, `${Date.now()}-${randomName}${extname(file.originalname)}`);
     },
   }),

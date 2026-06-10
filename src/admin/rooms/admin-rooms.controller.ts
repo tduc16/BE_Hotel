@@ -1,4 +1,16 @@
-import { Controller, Post, Body, Get, Query, UseGuards, HttpCode, HttpStatus, Patch, Param, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  Query,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+  Patch,
+  Param,
+  Delete,
+} from '@nestjs/common';
 import { AdminRoomsService } from './admin-rooms.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
@@ -20,7 +32,10 @@ export class AdminRoomsController {
   }
 
   @Get()
-  async getRooms(@Query('search') search?: string, @Query('status') status?: string) {
+  async getRooms(
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+  ) {
     const data = await this.roomsService.getRooms(search, status);
     return {
       message: 'Rooms retrieved successfully',
