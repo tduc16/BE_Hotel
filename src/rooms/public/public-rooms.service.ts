@@ -88,6 +88,7 @@ export class PublicRoomsService {
       .createQueryBuilder('category')
       .leftJoinAndSelect('category.rooms', 'rooms')
       .leftJoinAndSelect('category.images', 'images')
+      .leftJoinAndSelect('category.services', 'services')
       .where('category.id = :id', { id })
       .andWhere('category.is_active = :isActive', { isActive: true })
       .getOne();
@@ -111,6 +112,7 @@ export class PublicRoomsService {
 
     const responseData = {
       ...categoryData,
+      services: category.services?.filter((s) => s.isActive) || [],
       base_price: Number(categoryData.base_price),
       total_rooms: totalRooms,
       available_rooms: availableRooms,

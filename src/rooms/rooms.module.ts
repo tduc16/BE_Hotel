@@ -10,5 +10,6 @@ import { PublicRoomsService } from './public/public-rooms.service';
   imports: [TypeOrmModule.forFeature([RoomCategory, Room, RoomCategoryImage])],
   controllers: [PublicRoomsController],
   providers: [PublicRoomsService],
+  exports: [PublicRoomsService, TypeOrmModule],
 })
 export class RoomsModule {}

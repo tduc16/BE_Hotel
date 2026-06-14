@@ -90,4 +90,19 @@ export class UpdateRoomCategoryDto {
     return Array.isArray(value) ? value : [];
   })
   append_gallery_images?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {}
+      return [value];
+    }
+    return Array.isArray(value) ? value : [];
+  })
+  serviceIds?: string[];
 }

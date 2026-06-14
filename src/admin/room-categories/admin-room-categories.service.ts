@@ -5,8 +5,9 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { RoomCategory } from '../../rooms/entities/room-category.entity';
+import { Service } from '../../services/entities/service.entity';
 import { CreateRoomCategoryDto } from './dto/create-room-category.dto';
 import { UpdateRoomCategoryDto } from './dto/update-room-category.dto';
 import { UploadService } from '../../upload/upload.service';
@@ -16,6 +17,8 @@ export class AdminRoomCategoriesService {
   constructor(
     @InjectRepository(RoomCategory)
     private readonly categoryRepo: Repository<RoomCategory>,
+    @InjectRepository(Service)
+    private readonly serviceRepo: Repository<Service>,
     private readonly uploadService: UploadService,
   ) {}
 
@@ -34,12 +37,21 @@ export class AdminRoomCategoriesService {
     const is_active =
       createDto.is_active !== undefined ? createDto.is_active : true;
 
+    // Load các dịch vụ đi kèm
+    let services: Service[] = [];
+    if (createDto.serviceIds && createDto.serviceIds.length > 0) {
+      services = await this.serviceRepo.find({
+        where: { id: In(createDto.serviceIds) },
+      });
+    }
+
     // 3. Khởi tạo và lưu
     const newCategory = this.categoryRepo.create({
       ...createDto,
       is_active,
       amenities: createDto.amenities || [],
       gallery_images: createDto.gallery_images || [],
+      services,
     });
 
     const savedCategory = await this.categoryRepo.save(newCategory);
@@ -66,7 +78,7 @@ export class AdminRoomCategoriesService {
   async getCategoryById(id: string) {
     const category = await this.categoryRepo.findOne({
       where: { id },
-      relations: ['images'],
+      relations: ['images', 'services'],
     });
 
     if (!category) {
@@ -77,7 +89,10 @@ export class AdminRoomCategoriesService {
   }
 
   async updateCategory(id: string, updateDto: UpdateRoomCategoryDto) {
-    const category = await this.categoryRepo.findOne({ where: { id } });
+    const category = await this.categoryRepo.findOne({
+      where: { id },
+      relations: ['services'],
+    });
     if (!category) {
       throw new NotFoundException(`Room category with ID ${id} not found`);
     }
@@ -142,6 +157,17 @@ export class AdminRoomCategoriesService {
       }
       category.thumbnail_url =
         updateDto.thumbnail_url === '' ? null : updateDto.thumbnail_url;
+    }
+
+    if (updateDto.serviceIds !== undefined) {
+      if (updateDto.serviceIds.length > 0) {
+        const services = await this.serviceRepo.find({
+          where: { id: In(updateDto.serviceIds) },
+        });
+        category.services = services;
+      } else {
+        category.services = [];
+      }
     }
 
     await this.categoryRepo.save(category);

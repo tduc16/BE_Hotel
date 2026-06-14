@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -20,10 +20,16 @@ import { Booking } from '../bookings/entities/booking.entity';
 import { BookingHistory } from '../bookings/entities/booking-history.entity';
 import { UploadModule } from '../upload/upload.module';
 import { CustomerModule } from '../customer/customer.module';
+import { AdminDashboardController } from './dashboard/admin-dashboard.controller';
+import { AdminDashboardService } from './dashboard/admin-dashboard.service';
+import { Customer } from '../customer/entities/customer.entity';
+import { Service } from '../services/entities/service.entity';
+import { ServicesModule } from '../services/services.module';
 
 @Module({
   imports: [
     CustomerModule,
+    forwardRef(() => ServicesModule),
     TypeOrmModule.forFeature([
       Admin,
       Room,
@@ -31,6 +37,8 @@ import { CustomerModule } from '../customer/customer.module';
       RoomCategoryImage,
       Booking,
       BookingHistory,
+      Customer,
+      Service,
     ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -49,6 +57,7 @@ import { CustomerModule } from '../customer/customer.module';
     AdminRoomsController,
     AdminRoomCategoriesController,
     AdminBookingsController,
+    AdminDashboardController,
   ],
   providers: [
     AdminAuthService,
@@ -56,6 +65,7 @@ import { CustomerModule } from '../customer/customer.module';
     AdminRoomsService,
     AdminRoomCategoriesService,
     AdminBookingsService,
+    AdminDashboardService,
   ],
   exports: [JwtModule],
 })

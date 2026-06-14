@@ -22,6 +22,7 @@ export class JwtAdminGuard implements CanActivate {
     console.log('--- ADMIN AUTH DEBUG ---');
     console.log('Headers:', request.headers);
     console.log('Extracted Token:', token);
+    console.log('Authorization Header:', request.headers.authorization);
 
     if (!token) {
       console.log('=> Admin token missing');
@@ -33,6 +34,7 @@ export class JwtAdminGuard implements CanActivate {
         secret: this.configService.get<string>('JWT_SECRET'),
       });
 
+      console.log('JWT Payload:', payload);
       console.log('Decoded Payload:', payload);
       console.log('User Role:', payload?.role);
 

@@ -19,7 +19,7 @@ export class CustomerService {
     private readonly bookingRepo: Repository<Booking>,
     @InjectRepository(BookingHistory)
     private readonly historyRepo: Repository<BookingHistory>,
-  ) {}
+  ) { }
 
   async getProfile(customerId: string) {
     const customer = await this.customerRepo.findOne({ where: { id: customerId } });

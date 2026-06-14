@@ -33,12 +33,7 @@ export class CustomerAuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(@Body() dto: LoginCustomerDto) {
-    const data = await this.authService.login(dto);
-    return {
-      success: true,
-      message: 'Đăng nhập thành công',
-      data,
-    };
+    return this.authService.login(dto);
   }
 
   @Post('logout')

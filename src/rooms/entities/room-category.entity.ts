@@ -1,7 +1,8 @@
-import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, OneToMany, ManyToMany, JoinTable } from 'typeorm';
 import { Room } from './room.entity';
 import { Booking } from '../../bookings/entities/booking.entity';
 import { RoomCategoryImage } from './room-category-image.entity';
+import { Service } from '../../services/entities/service.entity';
 
 @Entity('room_categories')
 export class RoomCategory {
@@ -41,4 +42,12 @@ export class RoomCategory {
     cascade: true,
   })
   images: RoomCategoryImage[];
+
+  @ManyToMany(() => Service, (service) => service.roomCategories)
+  @JoinTable({
+    name: 'room_category_services',
+    joinColumn: { name: 'room_category_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'service_id', referencedColumnName: 'id' },
+  })
+  services: Service[];
 }

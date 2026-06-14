@@ -13,6 +13,8 @@ import { PublicBookingsModule } from './public-bookings/public-bookings.module';
 import { MailModule } from './mail/mail.module';
 import { CustomerAuthModule } from './customer-auth/customer-auth.module';
 import { CustomerModule } from './customer/customer.module';
+import { ServicesModule } from './services/services.module';
+import { ChatbotModule } from './chatbot/chatbot.module';
 
 @Module({
   imports: [
@@ -24,6 +26,8 @@ import { CustomerModule } from './customer/customer.module';
     MailModule,
     CustomerAuthModule,
     CustomerModule,
+    ServicesModule,
+    ChatbotModule,
     ScheduleModule.forRoot(),
     UploadModule,
     ServeStaticModule.forRoot({
