@@ -6,13 +6,18 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { Request } from 'express';
+import { Customer } from '../../customer/entities/customer.entity';
 
 @Injectable()
 export class JwtCustomerGuard implements CanActivate {
   constructor(
     private jwtService: JwtService,
     private configService: ConfigService,
+    @InjectRepository(Customer)
+    private customerRepo: Repository<Customer>,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -33,9 +38,28 @@ export class JwtCustomerGuard implements CanActivate {
         throw new UnauthorizedException('Bạn không có quyền truy cập tài nguyên này');
       }
 
+      // Kiểm tra tài khoản có bị BLOCKED không (realtime check từ DB)
+      const customer = await this.customerRepo.findOne({
+        where: { id: payload.id },
+        select: ['id', 'status'],
+      });
+
+      if (!customer) {
+        throw new UnauthorizedException('Tài khoản không tồn tại');
+      }
+
+      if (customer.status === 'BLOCKED') {
+        throw new UnauthorizedException(
+          'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ khách sạn để được hỗ trợ.',
+        );
+      }
+
       // Gán payload vào request
       request['user'] = payload;
     } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
       throw new UnauthorizedException(
         'Token đăng nhập không hợp lệ hoặc đã hết hạn',
       );

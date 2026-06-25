@@ -395,6 +395,22 @@ export class AdminDashboardService {
       });
     }
 
+    // --- 11. REVIEWS STATS ---
+    let averageRating = 4.8;
+    let totalReviews = 0;
+    try {
+      const reviewStats = await this.bookingRepo.query(
+        `SELECT AVG(rating) as avg, COUNT(id) as count FROM reviews WHERE status = 'APPROVED'`
+      );
+      const rawAvg = parseFloat(reviewStats?.[0]?.avg || '0');
+      if (rawAvg > 0) {
+        averageRating = Math.round(rawAvg * 10) / 10;
+      }
+      totalReviews = parseInt(reviewStats?.[0]?.count || '0');
+    } catch (err) {
+      console.error("[Dashboard] Fetch review stats error:", err);
+    }
+
     return {
       summary: {
         totalRevenue,
@@ -405,7 +421,8 @@ export class AdminDashboardService {
         occupancyGrowth: Math.round(occupancyGrowth * 10) / 10,
         newCustomers,
         customerGrowth: Math.round(customerGrowth * 10) / 10,
-        averageRating: 4.8, // Giá trị mặc định
+        averageRating,
+        totalReviews,
       },
       todayStats: {
         checkInsToday,

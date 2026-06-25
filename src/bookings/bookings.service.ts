@@ -12,11 +12,15 @@ import {
   PaymentMethod,
   PaymentStatus,
 } from './entities/booking.entity';
+import { BookingHistory } from './entities/booking-history.entity';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { RoomCategory } from '../rooms/entities/room-category.entity';
 import { Room } from '../rooms/entities/room.entity';
 import { MailService } from '../mail/mail.service';
 import { randomUUID } from 'crypto';
+
+import { BookingAvailabilityService } from './booking-availability.service';
+import { VouchersService } from '../vouchers/vouchers.service';
 
 @Injectable()
 export class BookingsService {
@@ -29,6 +33,8 @@ export class BookingsService {
     private roomCategoryRepo: Repository<RoomCategory>,
     private dataSource: DataSource,
     private mailService: MailService,
+    private readonly bookingAvailabilityService: BookingAvailabilityService,
+    private readonly vouchersService: VouchersService,
   ) {}
 
   /**
@@ -39,26 +45,42 @@ export class BookingsService {
     if (date instanceof Date) {
       return date.toISOString().substring(0, 10);
     }
-    // Nếu là string dạng '2026-05-15T00:00:00.000Z', cắt lấy 10 ký tự đầu
     return String(date).substring(0, 10);
   }
 
   /**
-   * Kiểm tra overlap booking cho một phòng (room_category_id).
-   *
-   * Điều kiện overlap (3 trường hợp bao gồm hết):
-   *   - check_in mới nằm trong booking cũ  → checkIn < oldCheckOut
-   *   - check_out mới nằm trong booking cũ → checkOut > oldCheckIn
-   *   => Kết hợp: newCheckIn < oldCheckOut AND newCheckOut > oldCheckIn
-   *   Công thức này bao gồm cả trường hợp booking mới bao trọn booking cũ.
-   *
-   * Chỉ xét các trạng thái đang hoạt động: PENDING, CONFIRMED, CHECKED_IN.
-   * Bỏ qua: CANCELLED, CHECKED_OUT, EXPIRED.
-   *
-   * @throws BadRequestException nếu có overlap
+   * Sinh booking code theo format BK{YEAR}{SEQ:5}
+   * Ví dụ: BK202600001, BK202600002, ...
+   * Sử dụng MAX để tránh race condition khi nhiều request cùng lúc.
+   * Chạy trong transaction để đảm bảo tính duy nhất.
    */
+  private async generateBookingCode(manager: any): Promise<string> {
+    const currentYear = new Date().getFullYear();
+    const pattern = `BK${currentYear}%`;
 
-  async createBooking(createBookingDto: CreateBookingDto, customerId: string | null = null) {
+    // Lấy MAX booking_code trong năm hiện tại
+    const result = await manager
+      .createQueryBuilder(Booking, 'booking')
+      .select('MAX(booking.booking_code)', 'maxCode')
+      .where('booking.booking_code LIKE :pattern', { pattern })
+      .getRawOne();
+
+    let newSequence = 1;
+    if (result?.maxCode) {
+      const lastSeq = parseInt(result.maxCode.replace(`BK${currentYear}`, ''), 10);
+      if (!isNaN(lastSeq)) {
+        newSequence = lastSeq + 1;
+      }
+    }
+
+    return `BK${currentYear}${newSequence.toString().padStart(5, '0')}`;
+  }
+
+  async createBooking(
+    createBookingDto: CreateBookingDto,
+    customerId: string | null = null,
+    preferredRoomId?: string,
+  ) {
     const {
       customer_name,
       phone,
@@ -69,9 +91,10 @@ export class BookingsService {
       check_out_date,
       guest_count,
       payment_method,
+      voucherCode,
     } = createBookingDto;
 
-    // Validate dates
+    // ── Validate dates ──────────────────────────────────────────────────────
     const checkIn = new Date(check_in_date);
     const checkOut = new Date(check_out_date);
 
@@ -86,15 +109,11 @@ export class BookingsService {
     today.setHours(0, 0, 0, 0);
 
     if (checkIn < today) {
-      throw new BadRequestException(
-        'Ngày nhận phòng không thể nằm trong quá khứ',
-      );
+      throw new BadRequestException('Ngày nhận phòng không thể nằm trong quá khứ');
     }
 
     if (checkOut <= checkIn) {
-      throw new BadRequestException(
-        'Ngày trả phòng phải lớn hơn ngày nhận phòng',
-      );
+      throw new BadRequestException('Ngày trả phòng phải lớn hơn ngày nhận phòng');
     }
 
     const nightCount = Math.round(
@@ -110,7 +129,7 @@ export class BookingsService {
     await queryRunner.startTransaction();
 
     try {
-      // 1. Lấy thông tin category
+      // ── 1. Lấy thông tin category ────────────────────────────────────────
       const category = await queryRunner.manager.findOne(RoomCategory, {
         where: { id: room_category_id },
       });
@@ -123,17 +142,9 @@ export class BookingsService {
         throw new BadRequestException('Hạng phòng này hiện không hoạt động');
       }
 
-      // Validate guest_count vs capacity — BẮT BUỘC phải check ở backend
-      console.log({
-        roomId: room_category_id,
-        roomCapacity: category.capacity,
-        guestCount: guest_count,
-      });
-
+      // ── Validate guest_count vs capacity ─────────────────────────────────
       if (guest_count < 1) {
-        throw new BadRequestException(
-          'Số lượng khách phải lớn hơn hoặc bằng 1',
-        );
+        throw new BadRequestException('Số lượng khách phải lớn hơn hoặc bằng 1');
       }
 
       if (guest_count > category.capacity) {
@@ -142,141 +153,82 @@ export class BookingsService {
         );
       }
 
-      // 2. Tính tiền
+      // ── 2. Tính tiền ─────────────────────────────────────────────────────
       const roomPrice = Number(category.base_price);
-      const totalAmount = roomPrice * nightCount;
+      const subtotal = roomPrice * nightCount;
 
-      if (totalAmount < 0) {
+      if (subtotal < 0) {
         throw new BadRequestException('Tổng tiền không thể là số âm');
       }
 
-      console.log({
-        roomId: room_category_id,
-        checkinDate: check_in_date,
-        checkoutDate: check_out_date,
-        nights: nightCount,
-        basePrice: roomPrice,
-        totalPrice: totalAmount,
-        roomCapacity: category.capacity,
-        guestCount: guest_count,
-      });
+      let finalAmount = subtotal;
+      let discountAmount = 0;
+      let appliedVoucherId: string | null = null;
+      let appliedVoucherCode: string | null = null;
 
-      // 3. Kiểm tra overlap booking — chống trùng lịch và tính availability
-      const normalizedCheckIn = this.normalizeDateString(check_in_date);
-      const normalizedCheckOut = this.normalizeDateString(check_out_date);
-
-      // Đếm tổng số phòng thực tế khả dụng của hạng phòng (không MAINTENANCE)
-      const totalRoomsCount = await queryRunner.manager.count(Room, {
-        where: { category: { id: room_category_id } },
-      });
-      const maintenanceRoomsCount = await queryRunner.manager.count(Room, {
-        where: { category: { id: room_category_id }, status: 'MAINTENANCE' },
-      });
-      const activeRoomsCount = totalRoomsCount - maintenanceRoomsCount;
-
-      // Lấy danh sách các booking trùng lịch trong hạng phòng này
-      const overlappingBookings = await queryRunner.manager
-        .createQueryBuilder(Booking, 'booking')
-        .select(['booking.id', 'booking.room_id', 'booking.booking_code'])
-        .where('booking.room_category_id = :categoryId', {
-          categoryId: room_category_id,
-        })
-        .andWhere('booking.booking_status IN (:...statuses)', {
-          statuses: [
-            BookingStatus.PENDING,
-            BookingStatus.CONFIRMED,
-            BookingStatus.CHECKED_IN,
-          ],
-        })
-        .andWhere('booking.check_in_date  < :checkOutDate', {
-          checkOutDate: normalizedCheckOut,
-        })
-        .andWhere('booking.check_out_date > :checkInDate', {
-          checkInDate: normalizedCheckIn,
-        })
-        .getMany();
-
-      const bookedRoomsCount = overlappingBookings.length;
-      const availableRoomsCount = activeRoomsCount - bookedRoomsCount;
-
-      this.logger.log(
-        `[AvailabilityCheck] roomCategoryId=${room_category_id} | totalActiveRooms=${activeRoomsCount} | bookedRooms=${bookedRoomsCount} | availableRooms=${availableRoomsCount}`,
-      );
-
-      if (availableRoomsCount <= 0) {
-        throw new BadRequestException({
-          statusCode: 400,
-          error: 'Bad Request',
-          message: 'Hết phòng trong khoảng thời gian này',
-          details: {
-            roomCategoryId: room_category_id,
-            requestedCheckIn: normalizedCheckIn,
-            requestedCheckOut: normalizedCheckOut,
-            totalActiveRooms: activeRoomsCount,
-            bookedRooms: bookedRoomsCount,
-            availableRooms: availableRoomsCount,
-          },
-        });
-      }
-
-      // 4. Auto assign room_id — tìm phòng thực tế chưa bị trùng lịch để gán cho booking mới
-      const occupiedRoomIds = overlappingBookings
-        .map((b) => b.room_id)
-        .filter((id) => id != null);
-
-      let availableRoomQuery = queryRunner.manager
-        .createQueryBuilder(Room, 'room')
-        .where('room.category_id = :categoryId', {
-          categoryId: room_category_id,
-        })
-        .andWhere('room.status != :maintenance', {
-          maintenance: 'MAINTENANCE',
-        });
-
-      if (occupiedRoomIds.length > 0) {
-        availableRoomQuery = availableRoomQuery.andWhere(
-          'room.id NOT IN (:...occupiedRoomIds)',
-          { occupiedRoomIds },
+      if (voucherCode && voucherCode.trim() !== '') {
+        const voucherResult = await this.vouchersService.validateVoucher(
+          voucherCode,
+          subtotal,
+          customerId,
+          email,
+          queryRunner.manager,
         );
-      }
 
-      const availableRoom = await availableRoomQuery.getOne();
+        if (!voucherResult.valid) {
+          throw new BadRequestException(voucherResult.message);
+        }
 
-      if (!availableRoom) {
-        // Fallback an toàn (trường hợp DB không nhất quán)
-        throw new BadRequestException(
-          'Hết phòng trong khoảng thời gian này (không tìm thấy phòng trống vật lý)',
-        );
-      }
-
-      const assignedRoomId = availableRoom.id;
-      this.logger.log(
-        `[BookingCreate] Assigned room_id=${assignedRoomId} cho booking mới`,
-      );
-
-      // Lấy booking sequence để gen code
-      const currentYear = new Date().getFullYear();
-      let newSequence = 1;
-      const lastBooking = await queryRunner.manager
-        .createQueryBuilder(Booking, 'booking')
-        .where('booking.booking_code LIKE :pattern', {
-          pattern: `BK${currentYear}%`,
-        })
-        .orderBy('booking.created_at', 'DESC')
-        .getOne();
-
-      if (lastBooking) {
-        const lastSeq = parseInt(
-          lastBooking.booking_code.replace(`BK${currentYear}`, ''),
-          10,
-        );
-        if (!isNaN(lastSeq)) {
-          newSequence = lastSeq + 1;
+        discountAmount = Number(voucherResult.discountAmount);
+        finalAmount = Number(voucherResult.finalAmount);
+        if (voucherResult.voucher) {
+          appliedVoucherId = voucherResult.voucher.id;
+          appliedVoucherCode = voucherResult.voucher.code;
         }
       }
-      const bookingCode = `BK${currentYear}${newSequence.toString().padStart(4, '0')}`;
 
-      // 5. Xác định Status
+      // ── 3. Kiểm tra phòng trống ──────────────────────────────────────────
+      const availCategories = await this.bookingAvailabilityService.findAvailableRoomCategories(
+        {
+          checkInDate: check_in_date,
+          checkOutDate: check_out_date,
+          guestCount: guest_count,
+        },
+        queryRunner.manager,
+      );
+
+      const targetCategory = availCategories.find((c) => c.categoryId === room_category_id);
+
+      if (!targetCategory || targetCategory.availableRoomCount <= 0) {
+        throw new BadRequestException(
+          'Hết phòng trong khoảng thời gian này. Vui lòng chọn ngày khác hoặc hạng phòng khác.',
+        );
+      }
+
+      // ── 4. Gán room_id vật lý ────────────────────────────────────────────
+      let assignedRoomId: string;
+
+      if (preferredRoomId && targetCategory.availableRooms.some((r) => r.id === preferredRoomId)) {
+        assignedRoomId = preferredRoomId;
+      } else {
+        assignedRoomId = targetCategory.availableRooms[0].id;
+      }
+
+      const availableRoom = await queryRunner.manager.findOne(Room, {
+        where: { id: assignedRoomId },
+      });
+      if (!availableRoom) {
+        throw new BadRequestException('Hết phòng trong khoảng thời gian này');
+      }
+
+      this.logger.log(
+        `[BookingCreate] Assigned room_id=${assignedRoomId} (${availableRoom.room_number}) cho booking mới`,
+      );
+
+      // ── 5. Sinh booking code ──────────────────────────────────────────────
+      const bookingCode = await this.generateBookingCode(queryRunner.manager);
+
+      // ── 6. Xác định trạng thái ────────────────────────────────────────────
       let finalBookingStatus = BookingStatus.PENDING;
       const finalPaymentStatus = PaymentStatus.UNPAID;
       let expiredAt: Date | null = null;
@@ -284,26 +236,21 @@ export class BookingsService {
       if (payment_method === PaymentMethod.CASH) {
         finalBookingStatus = BookingStatus.CONFIRMED;
       } else {
-        // Có thể là Bank Transfer hoặc EWALLET
         finalBookingStatus = BookingStatus.PENDING;
         expiredAt = new Date();
-        expiredAt.setMinutes(expiredAt.getMinutes() + 15); // +15 phút
+        expiredAt.setMinutes(expiredAt.getMinutes() + 15);
       }
 
-      console.log('--- START CREATE BOOKING ---');
-      console.log('DTO:', createBookingDto);
-
-      // Generate booking_token (UUID v4) — dùng cho link quản lý booking không cần đăng nhập
+      // ── 7. Tạo booking token ──────────────────────────────────────────────
       const bookingToken = randomUUID();
 
-      const newBooking = new Booking();
-      Object.assign(newBooking, {
+      const newBooking = queryRunner.manager.create(Booking, {
         booking_code: bookingCode,
         booking_token: bookingToken,
         customer_name,
         phone,
         email,
-        note,
+        note: note ?? undefined,
         room_category_id,
         room_id: assignedRoomId,
         check_in_date: check_in_date,
@@ -311,33 +258,44 @@ export class BookingsService {
         guest_count,
         night_count: nightCount,
         room_price: roomPrice,
-        total_amount: totalAmount,
+        subtotal: subtotal,
+        discountAmount: discountAmount,
+        total_amount: finalAmount,
+        voucherId: appliedVoucherId ?? undefined,
+        voucherCode: appliedVoucherCode ?? undefined,
         payment_method,
         payment_status: finalPaymentStatus,
         booking_status: finalBookingStatus,
-        expired_at: expiredAt,
+        expired_at: expiredAt ?? undefined,
         customerId: customerId,
       });
 
-      console.log('--- BEFORE SAVE BOOKING ---');
-      console.log(newBooking);
-
-      let savedBooking;
+      let savedBooking: Booking;
       try {
         savedBooking = await queryRunner.manager.save(newBooking);
-        console.log('--- AFTER SAVE BOOKING ---');
-        console.log(savedBooking);
+
+        // Tạo bản ghi voucher usage
+        if (appliedVoucherId) {
+          const usage = queryRunner.manager.create('VoucherUsage', {
+            voucherId: appliedVoucherId,
+            customerId: customerId || null,
+            bookingId: savedBooking.id,
+            guestEmail: customerId ? null : email,
+            discountAmount: discountAmount,
+          });
+          await queryRunner.manager.save('VoucherUsage', usage);
+          await queryRunner.manager.increment('Voucher', { id: appliedVoucherId }, 'usedCount', 1);
+        }
       } catch (saveError) {
-        console.error('--- SAVE BOOKING ERROR ---', saveError);
-        throw new BadRequestException(
-          'Lỗi khi lưu thông tin đặt phòng vào CSDL',
-        );
+        this.logger.error('[BookingCreate] Lỗi khi lưu booking:', saveError);
+        throw new BadRequestException('Lỗi khi lưu thông tin đặt phòng vào CSDL');
       }
 
       await queryRunner.commitTransaction();
 
-      // Gửi email xác nhận sau khi commit transaction thành công
-      // Không await để không block response — lỗi mail sẽ chỉ được log
+      this.logger.log(`[BookingCreate] bookingCode=${bookingCode} created successfully`);
+
+      // Gửi email xác nhận (async, không block response)
       this.mailService
         .sendBookingConfirmation({
           customerName: customer_name,
@@ -350,7 +308,7 @@ export class BookingsService {
           checkOutDate: check_out_date,
           guestCount: guest_count,
           nightCount,
-          totalAmount,
+          totalAmount: finalAmount,
           paymentMethod: payment_method,
           paymentStatus: finalPaymentStatus,
           bookingStatus: finalBookingStatus,
@@ -359,10 +317,14 @@ export class BookingsService {
           this.logger.error('[MAIL_ASYNC_ERROR] Lỗi gửi email xác nhận booking:', err),
         );
 
-      return savedBooking;
+      return {
+        ...savedBooking,
+        roomName: category.name,
+        roomNumber: availableRoom.room_number,
+      };
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      console.error('--- CREATE BOOKING TRANSACTION ROLLBACK ---', error);
+      this.logger.error('[BookingCreate] Transaction rollback:', error.message);
       throw error;
     } finally {
       await queryRunner.release();
@@ -382,5 +344,150 @@ export class BookingsService {
     }
 
     return booking;
+  }
+
+  // ─── GUEST LOOKUP & CANCEL METHODS ─────────────────────────────────────────
+
+  /**
+   * Tra cứu booking theo bookingCode + phone.
+   * Trả về đầy đủ thông tin để hiển thị trên trang tra cứu.
+   */
+  async guestLookup(bookingCode: string, phone: string) {
+    const normalizedCode = bookingCode.trim().toUpperCase();
+    const normalizedPhone = phone.trim().replace(/\s/g, '');
+
+    const booking = await this.bookingRepo.findOne({
+      where: [
+        { booking_code: normalizedCode, phone: normalizedPhone },
+        { booking_code: normalizedCode, phone: phone.trim() },
+      ],
+      relations: ['roomCategory', 'room'],
+    });
+
+    if (!booking) {
+      return null;
+    }
+
+    return this.mapBookingToPublicResponse(booking);
+  }
+
+  /**
+   * Hủy booking theo bookingCode + phone.
+   * Rules:
+   * - Booking chưa CHECKED_IN
+   * - Booking chưa CANCELLED
+   * - Ngày nhận phòng còn lớn hơn hôm nay
+   */
+  async guestCancel(bookingCode: string, phone: string) {
+    const normalizedCode = bookingCode.trim().toUpperCase();
+    const normalizedPhone = phone.trim().replace(/\s/g, '');
+
+    const booking = await this.bookingRepo.findOne({
+      where: [
+        { booking_code: normalizedCode, phone: normalizedPhone },
+        { booking_code: normalizedCode, phone: phone.trim() },
+      ],
+      relations: ['roomCategory', 'room'],
+    });
+
+    if (!booking) {
+      throw new NotFoundException('Không tìm thấy đơn đặt phòng phù hợp với mã đặt phòng và số điện thoại.');
+    }
+
+    const status = booking.booking_status;
+
+    if (status === BookingStatus.CANCELLED) {
+      throw new BadRequestException('Đơn đặt phòng này đã được hủy trước đó.');
+    }
+
+    if (status === BookingStatus.CHECKED_IN || status === BookingStatus.CHECKED_OUT) {
+      throw new BadRequestException('Không thể hủy đơn đặt phòng sau khi đã nhận phòng.');
+    }
+
+    if (status !== BookingStatus.PENDING && status !== BookingStatus.CONFIRMED) {
+      throw new BadRequestException(`Không thể hủy đơn đặt phòng ở trạng thái ${status}.`);
+    }
+
+    // Kiểm tra ngày nhận phòng > hôm nay
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const checkInDate = new Date(booking.check_in_date);
+    checkInDate.setHours(0, 0, 0, 0);
+
+    if (today >= checkInDate) {
+      throw new BadRequestException('Không thể hủy đơn đặt phòng khi đã đến hoặc qua ngày nhận phòng.');
+    }
+
+    const prevStatus = booking.booking_status;
+    const prevPaymentStatus = booking.payment_status;
+
+    // Xác định trạng thái payment sau khi hủy
+    let newPaymentStatus = prevPaymentStatus;
+    if (prevPaymentStatus === PaymentStatus.PAID) {
+      newPaymentStatus = PaymentStatus.REFUNDED;
+    }
+
+    await this.bookingRepo.manager.transaction(async (manager) => {
+      await manager.update(Booking, booking.id, {
+        booking_status: BookingStatus.CANCELLED,
+        payment_status: newPaymentStatus,
+        updated_at: new Date(),
+      });
+
+      const history = manager.create(BookingHistory, {
+        booking_id: booking.id,
+        action: 'CUSTOMER_CANCEL',
+        previous_status: prevStatus,
+        new_status: BookingStatus.CANCELLED,
+        note: prevPaymentStatus === PaymentStatus.PAID
+          ? 'Khách tự hủy qua trang tra cứu — yêu cầu hoàn tiền'
+          : 'Khách tự hủy qua trang tra cứu',
+      });
+      await manager.save(BookingHistory, history);
+    });
+
+    this.logger.log(
+      `[GUEST_CANCEL] bookingCode=${booking.booking_code} prevStatus=${prevStatus} → CANCELLED | paymentStatus: ${prevPaymentStatus} → ${newPaymentStatus}`,
+    );
+
+    const updatedBooking = await this.bookingRepo.findOne({
+      where: { id: booking.id },
+      relations: ['roomCategory', 'room'],
+    });
+
+    if (!updatedBooking) {
+      throw new NotFoundException('Lỗi tải lại thông tin đặt phòng.');
+    }
+
+    return this.mapBookingToPublicResponse(updatedBooking);
+  }
+
+  /**
+   * Map Booking entity sang response object đầy đủ cho guest.
+   */
+  private mapBookingToPublicResponse(booking: Booking) {
+    return {
+      id: booking.id,
+      bookingCode: booking.booking_code,
+      customerName: booking.customer_name,
+      phone: booking.phone,
+      email: booking.email,
+      note: booking.note,
+      roomName: booking.roomCategory?.name || '',
+      roomNumber: booking.room?.room_number || null,
+      checkInDate: booking.check_in_date,
+      checkOutDate: booking.check_out_date,
+      guestCount: booking.guest_count,
+      nightCount: booking.night_count,
+      roomPrice: Number(booking.room_price),
+      subtotal: Number(booking.subtotal),
+      discountAmount: Number(booking.discountAmount),
+      totalAmount: Number(booking.total_amount),
+      voucherCode: booking.voucherCode || null,
+      paymentMethod: booking.payment_method,
+      bookingStatus: booking.booking_status,
+      paymentStatus: booking.payment_status,
+      createdAt: booking.created_at,
+    };
   }
 }

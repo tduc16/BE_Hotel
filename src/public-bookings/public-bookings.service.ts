@@ -37,13 +37,18 @@ export class PublicBookingsService {
       customerName: booking.customer_name,
       phone: booking.phone,
       email: booking.email,
+      note: booking.note ?? null,
       roomName: booking.roomCategory?.name ?? '',
       roomNumber: booking.room?.room_number ?? null,
       checkInDate: booking.check_in_date,
       checkOutDate: booking.check_out_date,
       guestCount: booking.guest_count,
       nightCount: booking.night_count,
+      roomPrice: Number(booking.room_price),
+      subtotal: Number(booking.subtotal),
+      discountAmount: Number(booking.discountAmount),
       totalAmount: Number(booking.total_amount),
+      voucherCode: booking.voucherCode ?? null,
       bookingStatus: booking.booking_status,
       paymentStatus: booking.payment_status,
       paymentMethod: booking.payment_method,
@@ -146,11 +151,15 @@ export class PublicBookingsService {
    * Không trả về token, không trả về admin data.
    */
   async searchBooking(dto: SearchBookingDto): Promise<PublicBookingResponseDto> {
+    const normalizedCode = dto.bookingCode.trim().toUpperCase();
+    const normalizedPhone = dto.phone.trim().replace(/\s/g, '');
+
+    // Thử tìm theo phone gốc hoặc phone đã chuẩn hóa
     const booking = await this.bookingRepo.findOne({
-      where: {
-        booking_code: dto.bookingCode,
-        phone: dto.phone,
-      },
+      where: [
+        { booking_code: normalizedCode, phone: normalizedPhone },
+        { booking_code: normalizedCode, phone: dto.phone.trim() },
+      ],
       relations: ['roomCategory', 'room'],
     });
 

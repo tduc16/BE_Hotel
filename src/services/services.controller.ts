@@ -17,7 +17,7 @@ import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
 import { JwtAdminGuard } from '../admin/auth/guards/jwt-admin.guard';
 
-@Controller()
+@Controller('services')
 export class ServicesController {
   constructor(private readonly servicesService: ServicesService) {}
 
@@ -25,32 +25,35 @@ export class ServicesController {
   // PUBLIC APIs (Không cần đăng nhập)
   // ==========================================
 
-  @Get('services')
+  @Get()
   async findAllPublic() {
     const data = await this.servicesService.findAllPublic();
     return {
       success: true,
-      message: 'Lấy danh sách dịch vụ thành công',
       data,
     };
   }
 
-  @Get('services/:slug')
+  @Get(':slug')
   async findBySlug(@Param('slug') slug: string) {
     const data = await this.servicesService.findBySlug(slug);
     return {
       success: true,
-      message: 'Lấy thông tin dịch vụ thành công',
       data,
     };
   }
+}
+
+@Controller('admin/services')
+@UseGuards(JwtAdminGuard)
+export class AdminServicesController {
+  constructor(private readonly servicesService: ServicesService) {}
 
   // ==========================================
   // ADMIN APIs (Cần đăng nhập)
   // ==========================================
 
-  @UseGuards(JwtAdminGuard)
-  @Get('admin/services')
+  @Get()
   async findAllAdmin(
     @Query('search') search?: string,
     @Query('isActive') isActiveStr?: string,
@@ -78,8 +81,7 @@ export class ServicesController {
     };
   }
 
-  @UseGuards(JwtAdminGuard)
-  @Get('admin/services/:id')
+  @Get(':id')
   async findOneAdmin(@Param('id', ParseUUIDPipe) id: string) {
     const data = await this.servicesService.findOne(id);
     return {
@@ -89,8 +91,7 @@ export class ServicesController {
     };
   }
 
-  @UseGuards(JwtAdminGuard)
-  @Post('admin/services')
+  @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() createDto: CreateServiceDto) {
     const data = await this.servicesService.create(createDto);
@@ -101,8 +102,7 @@ export class ServicesController {
     };
   }
 
-  @UseGuards(JwtAdminGuard)
-  @Put('admin/services/:id')
+  @Put(':id')
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateDto: UpdateServiceDto,
@@ -115,8 +115,7 @@ export class ServicesController {
     };
   }
 
-  @UseGuards(JwtAdminGuard)
-  @Delete('admin/services/:id')
+  @Delete(':id')
   async softDelete(@Param('id', ParseUUIDPipe) id: string) {
     const data = await this.servicesService.softDelete(id);
     return {

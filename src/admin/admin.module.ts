@@ -25,6 +25,8 @@ import { AdminDashboardService } from './dashboard/admin-dashboard.service';
 import { Customer } from '../customer/entities/customer.entity';
 import { Service } from '../services/entities/service.entity';
 import { ServicesModule } from '../services/services.module';
+import { AdminCustomersController } from './customers/admin-customers.controller';
+import { AdminCustomersService } from './customers/admin-customers.service';
 
 @Module({
   imports: [
@@ -58,6 +60,7 @@ import { ServicesModule } from '../services/services.module';
     AdminRoomCategoriesController,
     AdminBookingsController,
     AdminDashboardController,
+    AdminCustomersController,
   ],
   providers: [
     AdminAuthService,
@@ -66,6 +69,7 @@ import { ServicesModule } from '../services/services.module';
     AdminRoomCategoriesService,
     AdminBookingsService,
     AdminDashboardService,
+    AdminCustomersService,
   ],
   exports: [JwtModule],
 })

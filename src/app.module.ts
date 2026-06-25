@@ -15,6 +15,8 @@ import { CustomerAuthModule } from './customer-auth/customer-auth.module';
 import { CustomerModule } from './customer/customer.module';
 import { ServicesModule } from './services/services.module';
 import { ChatbotModule } from './chatbot/chatbot.module';
+import { VouchersModule } from './vouchers/vouchers.module';
+import { ReviewsModule } from './reviews/reviews.module';
 
 @Module({
   imports: [
@@ -28,6 +30,8 @@ import { ChatbotModule } from './chatbot/chatbot.module';
     CustomerModule,
     ServicesModule,
     ChatbotModule,
+    VouchersModule,
+    ReviewsModule,
     ScheduleModule.forRoot(),
     UploadModule,
     ServeStaticModule.forRoot({

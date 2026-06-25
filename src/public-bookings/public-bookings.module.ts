@@ -4,9 +4,13 @@ import { PublicBookingsController } from './public-bookings.controller';
 import { PublicBookingsService } from './public-bookings.service';
 import { Booking } from '../bookings/entities/booking.entity';
 import { BookingHistory } from '../bookings/entities/booking-history.entity';
+import { BookingsModule } from '../bookings/bookings.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Booking, BookingHistory])],
+  imports: [
+    TypeOrmModule.forFeature([Booking, BookingHistory]),
+    BookingsModule, // Import để dùng BookingAvailabilityService
+  ],
   controllers: [PublicBookingsController],
   providers: [PublicBookingsService],
 })

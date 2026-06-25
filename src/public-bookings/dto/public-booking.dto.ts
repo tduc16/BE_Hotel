@@ -80,6 +80,9 @@ export class PublicBookingResponseDto {
   @ApiProperty({ example: 'guest@email.com' })
   email: string;
 
+  @ApiProperty({ example: 'Yêu cầu thêm: giường phụ', nullable: true })
+  note: string | null;
+
   @ApiProperty({ example: 'Deluxe Ocean View' })
   roomName: string;
 
@@ -98,8 +101,20 @@ export class PublicBookingResponseDto {
   @ApiProperty({ example: 3 })
   nightCount: number;
 
-  @ApiProperty({ example: 1500000 })
+  @ApiProperty({ example: 500000 })
+  roomPrice: number;
+
+  @ApiProperty({ example: 1500000, description: 'Tổng tiền trước giảm giá (nightCount * roomPrice)' })
+  subtotal: number;
+
+  @ApiProperty({ example: 100000, description: 'Số tiền giảm từ voucher' })
+  discountAmount: number;
+
+  @ApiProperty({ example: 1400000 })
   totalAmount: number;
+
+  @ApiProperty({ example: 'SUMMER2026', nullable: true })
+  voucherCode: string | null;
 
   @ApiProperty({ example: 'PENDING' })
   bookingStatus: string;
@@ -113,3 +128,4 @@ export class PublicBookingResponseDto {
   @ApiProperty({ example: '2026-06-10T10:00:00.000Z' })
   createdAt: Date;
 }
+

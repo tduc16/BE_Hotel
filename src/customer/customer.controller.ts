@@ -56,12 +56,4 @@ export class CustomerController {
     };
   }
 
-  @Get('vouchers')
-  async getVouchers(@Request() req) {
-    const data = await this.customerService.getVouchers(req.user.id);
-    return {
-      success: true,
-      data,
-    };
-  }
 }

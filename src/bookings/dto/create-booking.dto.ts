@@ -57,4 +57,8 @@ export class CreateBookingDto {
   @IsNotEmpty({ message: 'Phương thức thanh toán không được để trống' })
   @IsEnum(PaymentMethod, { message: 'Phương thức thanh toán không hợp lệ' })
   payment_method: PaymentMethod;
+
+  @IsOptional()
+  @IsString()
+  voucherCode?: string;
 }

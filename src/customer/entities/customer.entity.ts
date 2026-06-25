@@ -6,12 +6,12 @@ import {
   UpdateDateColumn,
   OneToMany,
 } from 'typeorm';
-import { Voucher } from './voucher.entity';
 import { Booking } from '../../bookings/entities/booking.entity';
 
 export enum CustomerStatus {
   ACTIVE = 'ACTIVE',
   INACTIVE = 'INACTIVE',
+  BLOCKED = 'BLOCKED',
 }
 
 export enum MembershipLevel {
@@ -65,9 +65,6 @@ export class Customer {
 
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
-
-  @OneToMany(() => Voucher, (voucher) => voucher.customer)
-  vouchers: Voucher[];
 
   @OneToMany(() => Booking, (booking) => booking.customer)
   bookings: Booking[];

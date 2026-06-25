@@ -2,7 +2,6 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, EntityManager } from 'typeorm';
 import { Customer, MembershipLevel } from './entities/customer.entity';
-import { Voucher } from './entities/voucher.entity';
 import { Booking, BookingStatus } from '../bookings/entities/booking.entity';
 import { BookingHistory } from '../bookings/entities/booking-history.entity';
 
@@ -13,8 +12,6 @@ export class CustomerService {
   constructor(
     @InjectRepository(Customer)
     private readonly customerRepo: Repository<Customer>,
-    @InjectRepository(Voucher)
-    private readonly voucherRepo: Repository<Voucher>,
     @InjectRepository(Booking)
     private readonly bookingRepo: Repository<Booking>,
     @InjectRepository(BookingHistory)
@@ -208,15 +205,8 @@ export class CustomerService {
     };
   }
 
-  async getVouchers(customerId: string) {
-    return this.voucherRepo.find({
-      where: { customerId },
-      order: { createdAt: 'DESC' },
-    });
-  }
-
   /**
-   * Xử lý tích điểm và tặng voucher khi booking chuyển sang CHECKED_OUT.
+   * Xử lý tích điểm và thăng hạng thành viên khi booking chuyển sang CHECKED_OUT.
    * Method này có thể chạy trong một transaction của TypeORM (truyền manager).
    */
   async handleBookingCompleted(bookingId: string, manager: EntityManager) {
@@ -231,16 +221,33 @@ export class CustomerService {
       return;
     }
 
-    // 1. Cộng điểm tích lũy (+100 điểm)
-    customer.loyaltyPoints += 100;
+    // 1. Cộng điểm tích lũy (1.000.000đ = 100 điểm, tức là cứ 10.000đ được 1 điểm)
+    const pointsToAdd = Math.floor(Number(booking.total_amount) / 10000);
+    customer.loyaltyPoints += pointsToAdd;
 
     // 2. Tự động tính lại hạng thành viên
+    // Đếm số booking đã checkout (bao gồm cả booking hiện tại)
+    const completedCount = await manager.count(Booking, {
+      where: { customerId, booking_status: BookingStatus.CHECKED_OUT },
+    });
+
+    // Tính tổng chi tiêu đã checkout
+    const stats = await manager
+      .createQueryBuilder(Booking, 'booking')
+      .select('SUM(booking.total_amount)', 'total')
+      .where('booking.customer_id = :customerId AND booking.booking_status = :status', {
+        customerId,
+        status: BookingStatus.CHECKED_OUT,
+      })
+      .getRawOne();
+    const totalSpent = Number(stats?.total) || 0;
+
     let newLevel = MembershipLevel.STANDARD;
-    if (customer.loyaltyPoints >= 2000) {
+    if (completedCount >= 10 || totalSpent >= 60000000) {
       newLevel = MembershipLevel.PLATINUM;
-    } else if (customer.loyaltyPoints >= 1000) {
+    } else if (completedCount >= 6 || totalSpent >= 30000000) {
       newLevel = MembershipLevel.GOLD;
-    } else if (customer.loyaltyPoints >= 300) {
+    } else if (completedCount >= 3 || totalSpent >= 10000000) {
       newLevel = MembershipLevel.SILVER;
     }
 
@@ -249,55 +256,7 @@ export class CustomerService {
     await manager.save(Customer, customer);
 
     this.logger.log(
-      `[LOYALTY_UPDATE] Customer ${customer.fullName} (${customerId}): Points ${customer.loyaltyPoints - 100} -> ${customer.loyaltyPoints}, Level ${oldLevel} -> ${newLevel}`,
+      `[LOYALTY_UPDATE] Customer ${customer.fullName} (${customerId}): Points ${customer.loyaltyPoints - pointsToAdd} -> ${customer.loyaltyPoints}, Level ${oldLevel} -> ${newLevel}, TotalSpent: ${totalSpent}, CompletedBookings: ${completedCount}`,
     );
-
-    // 3. Đếm số booking hoàn thành (CHECKED_OUT) để tặng voucher
-    const completedCount = await manager.count(Booking, {
-      where: { customerId, booking_status: BookingStatus.CHECKED_OUT },
-    });
-
-    const customerShortId = customerId.split('-')[0];
-
-    // Mốc 3 completed bookings -> Voucher 5%
-    if (completedCount >= 3) {
-      const code = `VCH5-3B-${customerShortId}`.toUpperCase();
-      await this.createVoucherIfNotExist(manager, customerId, code, 5);
-    }
-
-    // Mốc 10 completed bookings -> Voucher 10%
-    if (completedCount >= 10) {
-      const code = `VCH10-10B-${customerShortId}`.toUpperCase();
-      await this.createVoucherIfNotExist(manager, customerId, code, 10);
-    }
-
-    // Mốc 20 completed bookings -> Voucher 15%
-    if (completedCount >= 20) {
-      const code = `VCH15-20B-${customerShortId}`.toUpperCase();
-      await this.createVoucherIfNotExist(manager, customerId, code, 15);
-    }
-  }
-
-  private async createVoucherIfNotExist(
-    manager: EntityManager,
-    customerId: string,
-    code: string,
-    discountPercent: number,
-  ) {
-    const existing = await manager.findOne(Voucher, { where: { code } });
-    if (!existing) {
-      const expiredAt = new Date();
-      expiredAt.setDate(expiredAt.getDate() + 30); // 30 ngày sử dụng
-
-      const voucher = manager.create(Voucher, {
-        customerId,
-        code,
-        discountPercent,
-        expiredAt,
-      });
-
-      await manager.save(Voucher, voucher);
-      this.logger.log(`[VOUCHER_CREATED] Tặng voucher ${code} (${discountPercent}%) cho khách hàng ${customerId}`);
-    }
   }
 }

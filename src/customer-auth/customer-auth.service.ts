@@ -58,6 +58,12 @@ export class CustomerAuthService {
       throw new UnauthorizedException('Thông tin đăng nhập không hợp lệ');
     }
 
+    if (customer.status === 'BLOCKED') {
+      throw new UnauthorizedException(
+        'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ khách sạn để được hỗ trợ.',
+      );
+    }
+
     const isMatch = await bcrypt.compare(password, customer.passwordHash);
     if (!isMatch) {
       throw new UnauthorizedException('Thông tin đăng nhập không hợp lệ');

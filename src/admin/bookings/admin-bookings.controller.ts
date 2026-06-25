@@ -21,7 +21,8 @@ import {
   ActionBookingDto,
 } from './dto/update-booking.dto';
 import { GetBookingCalendarDto } from './dto/booking-calendar-query.dto';
-import { BookingStatus } from '../../bookings/entities/booking.entity';
+import { BookingStatus, PaymentStatus } from '../../bookings/entities/booking.entity';
+import { PaymentStatus as PaymentStatusEnum } from '../../bookings/entities/booking.enums';
 
 const mapBookingResponse = (booking: any) => {
   const room_name = booking.room?.room_number
@@ -78,6 +79,9 @@ const mapBookingDetailResponse = (booking: any) => {
     guestCount: booking.guest_count !== undefined && booking.guest_count !== null ? Number(booking.guest_count) : null,
     nightCount: booking.night_count !== undefined && booking.night_count !== null ? Number(booking.night_count) : null,
     roomPrice: booking.room_price !== undefined && booking.room_price !== null ? Number(booking.room_price) : null,
+    subtotal: booking.subtotal !== undefined && booking.subtotal !== null ? Number(booking.subtotal) : null,
+    discountAmount: booking.discountAmount !== undefined && booking.discountAmount !== null ? Number(booking.discountAmount) : null,
+    voucherCode: booking.voucherCode ?? null,
     totalAmount: booking.total_amount !== undefined && booking.total_amount !== null ? Number(booking.total_amount) : null,
     paymentMethod: booking.payment_method ?? null,
     paymentStatus: booking.payment_status ?? null,
@@ -378,6 +382,44 @@ export class AdminBookingsController {
       success: true,
       data: mapBookingResponse(data),
       message: 'Booking cancelled successfully',
+    };
+  }
+
+  /**
+   * PATCH /admin/bookings/:id/payment
+   * Cập nhật trạng thái thanh toán của booking.
+   * Body: { paymentStatus: 'UNPAID' | 'PAID' | 'REFUNDED' | 'FAILED', note?: string }
+   */
+  @Patch(':id/payment')
+  async updatePaymentStatus(
+    @Param('id') id: string,
+    @Body() body: { paymentStatus: PaymentStatusEnum; note?: string },
+    @Request() req,
+  ) {
+    const adminId = req.user?.id;
+
+    if (!body.paymentStatus) {
+      throw new BadRequestException('paymentStatus là bắt buộc');
+    }
+
+    const validStatuses = ['UNPAID', 'PAID', 'REFUNDED', 'FAILED'];
+    if (!validStatuses.includes(body.paymentStatus)) {
+      throw new BadRequestException(
+        `paymentStatus không hợp lệ. Hợp lệ: ${validStatuses.join(', ')}`,
+      );
+    }
+
+    const data = await this.adminBookingsService.updatePaymentStatus(
+      id,
+      body.paymentStatus,
+      adminId,
+      body.note,
+    );
+
+    return {
+      success: true,
+      data: mapBookingDetailResponse(data),
+      message: `Cập nhật thanh toán thành công: ${body.paymentStatus}`,
     };
   }
 }

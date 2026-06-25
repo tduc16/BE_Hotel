@@ -89,6 +89,30 @@ export class Booking {
   @JoinColumn({ name: 'customer_id' })
   customer: any;
 
+  @Column({ name: 'voucher_id', type: 'uuid', nullable: true })
+  voucherId: string | null;
+
+  @ManyToOne('Voucher', 'usages', { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'voucher_id' })
+  voucher: any;
+
+  @Column({ name: 'voucher_code', type: 'varchar', length: 50, nullable: true })
+  voucherCode: string | null;
+
+  /**
+   * Tổng tiền trước khi giảm giá (nightCount * roomPrice)
+   * DB column: original_amount
+   */
+  @Column('decimal', { name: 'original_amount', precision: 12, scale: 2, nullable: true })
+  subtotal: number | null;
+
+  /**
+   * Số tiền được giảm từ voucher
+   * DB column: discount_amount
+   */
+  @Column('decimal', { name: 'discount_amount', precision: 12, scale: 2, default: 0 })
+  discountAmount: number;
+
   @CreateDateColumn()
   created_at: Date;
 

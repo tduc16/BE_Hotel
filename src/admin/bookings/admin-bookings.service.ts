@@ -497,23 +497,81 @@ export class AdminBookingsService {
       );
     }
 
-    booking.booking_status = BookingStatus.CANCELLED;
+    const prevPaymentStatus = booking.payment_status;
 
-    const updated = await this.bookingRepo.save(booking);
-    await this.logHistory(
-      booking.id,
-      'CANCEL_BOOKING',
-      adminId,
-      prevStatus,
-      BookingStatus.CANCELLED,
-      reason,
-    );
+    await this.bookingRepo.manager.transaction(async (manager) => {
+      // Cập nhật booking status
+      await manager.update(Booking, id, {
+        booking_status: BookingStatus.CANCELLED,
+        updated_at: new Date(),
+      });
+
+      // Giải phóng phòng
+      if (booking.room_id) {
+        await manager.update(Room, booking.room_id, { status: 'AVAILABLE' });
+      }
+
+      // Lưu lịch sử
+      const history = manager.create(BookingHistory, {
+        booking_id: booking.id,
+        admin_id: adminId,
+        action: 'CANCEL_BOOKING',
+        previous_status: prevStatus,
+        new_status: BookingStatus.CANCELLED,
+        note: reason,
+      });
+      await manager.save(history);
+    });
 
     this.logger.log(
       `[BOOKING_STATUS_CHANGE] bookingId=${id} oldStatus=${prevStatus} newStatus=${BookingStatus.CANCELLED}`,
     );
 
-    return updated;
+    return this.bookingRepo.findOne({ where: { id } }) as Promise<Booking>;
+  }
+
+  /**
+   * Cập nhật trạng thái thanh toán của booking.
+   * Admin quản lý payment status độc lập với booking status.
+   */
+  async updatePaymentStatus(
+    id: string,
+    newPaymentStatus: import('../../bookings/entities/booking.enums').PaymentStatus,
+    adminId?: string,
+    note?: string,
+  ): Promise<Booking> {
+    const booking = await this.getBookingDetail(id);
+
+    const prevPaymentStatus = booking.payment_status;
+
+    if (prevPaymentStatus === newPaymentStatus) {
+      throw new BadRequestException(
+        `Trạng thái thanh toán đã là ${newPaymentStatus}, không cần cập nhật.`,
+      );
+    }
+
+    await this.bookingRepo.manager.transaction(async (manager) => {
+      await manager.update(Booking, id, {
+        payment_status: newPaymentStatus,
+        updated_at: new Date(),
+      });
+
+      const history = manager.create(BookingHistory, {
+        booking_id: booking.id,
+        admin_id: adminId,
+        action: 'UPDATE_PAYMENT',
+        previous_status: booking.booking_status,
+        new_status: booking.booking_status,
+        note: note || `Cập nhật payment: ${prevPaymentStatus} → ${newPaymentStatus}`,
+      });
+      await manager.save(history);
+    });
+
+    this.logger.log(
+      `[PAYMENT_STATUS_CHANGE] bookingId=${id} oldPayment=${prevPaymentStatus} newPayment=${newPaymentStatus} adminId=${adminId}`,
+    );
+
+    return this.bookingRepo.findOne({ where: { id } }) as Promise<Booking>;
   }
 
   async getBookingCalendar(query: GetBookingCalendarDto) {
