@@ -60,6 +60,12 @@ export class Customer {
   @Column({ name: 'last_login_at', type: 'timestamp', nullable: true })
   lastLoginAt: Date;
 
+  @Column({ name: 'reset_password_token', type: 'varchar', nullable: true })
+  resetPasswordToken: string | null;
+
+  @Column({ name: 'reset_password_expires', type: 'timestamp', nullable: true })
+  resetPasswordExpires: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

@@ -101,6 +101,10 @@ export class BookingsController {
         paymentStatus: booking.payment_status,
         bookingStatus: booking.booking_status,
         createdAt: booking.created_at,
+        // QR chuyển khoản
+        bankQrUrl: (booking as any).bankQrUrl || null,
+        bankTransferContent: (booking as any).bankTransferContent || null,
+        bankInfo: (booking as any).bankInfo || null,
         // Backward compat fields
         booking_code: booking.booking_code,
         total_amount: Number(booking.total_amount),
@@ -143,6 +147,9 @@ export class BookingsController {
         paymentMethod: booking.payment_method,
         paymentStatus: booking.payment_status,
         bookingStatus: booking.booking_status,
+        bankQrUrl: booking.bankQrUrl || null,
+        bankTransferContent: booking.bankTransferContent || null,
+        paidAt: booking.paidAt || null,
         createdAt: booking.created_at,
         // Backward compat
         booking_code: booking.booking_code,

@@ -10,7 +10,7 @@ import { UploadModule } from './upload/upload.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import { PublicBookingsModule } from './public-bookings/public-bookings.module';
-import { MailModule } from './mail/mail.module';
+import { EmailModule } from './email/email.module';
 import { CustomerAuthModule } from './customer-auth/customer-auth.module';
 import { CustomerModule } from './customer/customer.module';
 import { ServicesModule } from './services/services.module';
@@ -25,7 +25,7 @@ import { ReviewsModule } from './reviews/reviews.module';
     AdminModule,
     BookingsModule,
     PublicBookingsModule,
-    MailModule,
+    EmailModule,
     CustomerAuthModule,
     CustomerModule,
     ServicesModule,

@@ -6,17 +6,18 @@ import { BookingsController } from './bookings.controller';
 import { BookingsService } from './bookings.service';
 import { BookingCronService } from './cron.service';
 import { BookingAvailabilityService } from './booking-availability.service';
+import { BankQrService } from './bank-qr.service';
 import { Booking } from './entities/booking.entity';
 import { BookingHistory } from './entities/booking-history.entity';
 import { RoomCategory } from '../rooms/entities/room-category.entity';
 import { Room } from '../rooms/entities/room.entity';
-import { MailModule } from '../mail/mail.module';
+import { EmailModule } from '../email/email.module';
 import { VouchersModule } from '../vouchers/vouchers.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Booking, BookingHistory, RoomCategory, Room]),
-    MailModule,
+    EmailModule,
     ConfigModule,
     VouchersModule,
     JwtModule.registerAsync({
@@ -31,8 +32,8 @@ import { VouchersModule } from '../vouchers/vouchers.module';
     }),
   ],
   controllers: [BookingsController],
-  providers: [BookingsService, BookingCronService, BookingAvailabilityService],
-  exports: [BookingsService, BookingAvailabilityService],
+  providers: [BookingsService, BookingCronService, BookingAvailabilityService, BankQrService],
+  exports: [BookingsService, BookingAvailabilityService, BankQrService],
 })
 export class BookingsModule {}
 

@@ -90,6 +90,10 @@ const mapBookingDetailResponse = (booking: any) => {
     checkOutDate: booking.check_out_date ? new Date(booking.check_out_date).toISOString() : null,
     createdAt: booking.created_at ? new Date(booking.created_at).toISOString() : null,
     updatedAt: booking.updated_at ? new Date(booking.updated_at).toISOString() : null,
+    // Bank transfer info
+    bankQrUrl: booking.bankQrUrl ?? null,
+    bankTransferContent: booking.bankTransferContent ?? null,
+    paidAt: booking.paidAt ? new Date(booking.paidAt).toISOString() : null,
 
     room: booking.room ? {
       id: booking.room.id ?? null,
@@ -420,6 +424,35 @@ export class AdminBookingsController {
       success: true,
       data: mapBookingDetailResponse(data),
       message: `Cập nhật thanh toán thành công: ${body.paymentStatus}`,
+    };
+  }
+
+  /**
+   * PATCH /admin/bookings/:id/confirm-payment
+   * Admin xác nhận đã nhận tiền chuyển khoản ngân hàng.
+   * - Chuyển paymentStatus: UNPAID → PAID
+   * - Chuyển bookingStatus: PENDING → CONFIRMED (nếu đang PENDING)
+   * - Ghi paidAt = now
+   * Body: { note?: string }
+   */
+  @Patch(':id/confirm-payment')
+  async confirmBankTransferPayment(
+    @Param('id') id: string,
+    @Body() body: { note?: string },
+    @Request() req,
+  ) {
+    const adminId = req.user?.id;
+
+    const data = await this.adminBookingsService.confirmBankTransferPayment(
+      id,
+      adminId,
+      body?.note,
+    );
+
+    return {
+      success: true,
+      data: mapBookingDetailResponse(data),
+      message: 'Xác nhận thanh toán chuyển khoản thành công.',
     };
   }
 }

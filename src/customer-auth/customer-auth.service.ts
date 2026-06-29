@@ -1,20 +1,29 @@
-import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { Customer } from '../customer/entities/customer.entity';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
 import { LoginCustomerDto } from './dto/login-customer.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { EmailService } from '../email/email.service';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 @Injectable()
 export class CustomerAuthService {
+  private readonly logger = new Logger(CustomerAuthService.name);
+
   constructor(
     @InjectRepository(Customer)
     private readonly customerRepo: Repository<Customer>,
     private readonly jwtService: JwtService,
+    private readonly emailService: EmailService,
+    private readonly configService: ConfigService,
   ) {}
 
   async register(dto: RegisterCustomerDto) {
@@ -38,6 +47,11 @@ export class CustomerAuthService {
     });
 
     const saved = await this.customerRepo.save(customer);
+
+    // Gửi email chào mừng bất đồng bộ, không làm crash luồng đăng ký
+    this.emailService.sendWelcomeEmail(saved.email, saved.fullName).catch((err) => {
+      this.logger.error(`[WelcomeEmailError] Lỗi gửi email chào mừng tới ${saved.email}: ${err.message}`, err.stack);
+    });
 
     // Remove passwordHash from return payload
     const { passwordHash: _, ...result } = saved;
@@ -134,5 +148,86 @@ export class CustomerAuthService {
 
     const saved = await this.customerRepo.save(customer);
     return saved;
+  }
+
+  async forgotPassword(dto: ForgotPasswordDto) {
+    const { email } = dto;
+    const customer = await this.customerRepo.findOne({ where: { email } });
+
+    // Bảo mật: luôn trả về một câu thông báo chung cho dù email có tồn tại hay không
+    const genericMessage = 'Nếu email tồn tại trong hệ thống, hướng dẫn đặt lại mật khẩu sẽ được gửi đến email của bạn.';
+
+    if (!customer) {
+      this.logger.log(`[ForgotPassword] Email ${email} không tồn tại trong hệ thống.`);
+      return { success: true, message: genericMessage };
+    }
+
+    // Tạo token ngẫu nhiên
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    // Hash token bằng sha256 trước khi lưu database
+    const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+    // Lưu token và hạn sử dụng (15 phút)
+    customer.resetPasswordToken = hashedToken;
+    customer.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000);
+    await this.customerRepo.save(customer);
+
+    // Tạo link reset
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:3000');
+    const resetLink = `${frontendUrl}/reset-password?token=${rawToken}&email=${encodeURIComponent(email)}`;
+
+    // Gửi email bất đồng bộ
+    this.emailService.sendForgotPasswordEmail(email, customer.fullName, resetLink).catch((err) => {
+      this.logger.error(`[ForgotPasswordEmailError] Lỗi gửi email quên mật khẩu tới ${email}: ${err.message}`, err.stack);
+    });
+
+    return { success: true, message: genericMessage };
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    const { email, token, newPassword, confirmPassword } = dto;
+
+    if (newPassword !== confirmPassword) {
+      throw new BadRequestException('Mật khẩu mới và mật khẩu xác nhận không trùng khớp');
+    }
+
+    // Hash token nhận được để so sánh với database
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    // Tìm customer bằng email
+    const customer = await this.customerRepo
+      .createQueryBuilder('customer')
+      .addSelect('customer.passwordHash')
+      .addSelect('customer.resetPasswordToken')
+      .addSelect('customer.resetPasswordExpires')
+      .where('customer.email = :email', { email })
+      .getOne();
+
+    if (!customer) {
+      throw new BadRequestException('Liên kết khôi phục mật khẩu không hợp lệ hoặc đã hết hạn');
+    }
+
+    // Kiểm tra token và ngày hết hạn
+    if (
+      !customer.resetPasswordToken ||
+      customer.resetPasswordToken !== hashedToken ||
+      !customer.resetPasswordExpires ||
+      customer.resetPasswordExpires.getTime() < Date.now()
+    ) {
+      throw new BadRequestException('Liên kết khôi phục mật khẩu không hợp lệ hoặc đã hết hạn');
+    }
+
+    // Cập nhật mật khẩu mới
+    customer.passwordHash = await bcrypt.hash(newPassword, 10);
+    customer.resetPasswordToken = null;
+    customer.resetPasswordExpires = null;
+    await this.customerRepo.save(customer);
+
+    // Gửi email thông báo đổi mật khẩu thành công bất đồng bộ
+    this.emailService.sendPasswordChangedEmail(customer.email, customer.fullName).catch((err) => {
+      this.logger.error(`[PasswordChangedEmailError] Lỗi gửi email thông báo đổi mật khẩu tới ${customer.email}: ${err.message}`, err.stack);
+    });
+
+    return { success: true, message: 'Đổi mật khẩu thành công' };
   }
 }

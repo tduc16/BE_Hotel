@@ -113,6 +113,24 @@ export class Booking {
   @Column('decimal', { name: 'discount_amount', precision: 12, scale: 2, default: 0 })
   discountAmount: number;
 
+  /**
+   * Nội dung chuyển khoản ngân hàng (booking_code)
+   */
+  @Column({ name: 'bank_transfer_content', type: 'varchar', length: 100, nullable: true })
+  bankTransferContent: string | null;
+
+  /**
+   * URL ảnh QR VietQR để thanh toán chuyển khoản
+   */
+  @Column({ name: 'bank_qr_url', type: 'text', nullable: true })
+  bankQrUrl: string | null;
+
+  /**
+   * Thời điểm admin xác nhận thanh toán thành công
+   */
+  @Column({ name: 'paid_at', type: 'timestamp', nullable: true })
+  paidAt: Date | null;
+
   @CreateDateColumn()
   created_at: Date;
 

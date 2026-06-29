@@ -65,25 +65,11 @@ async function bootstrap() {
   });
 
   const configService = app.get(ConfigService);
-  let port = Number(configService.get('PORT')) || 3001;
+  const port = Number(configService.get('PORT')) || 3000;
 
-  try {
-    await app.listen(port);
-    console.log(`🚀 Backend running on: http://localhost:${port}/api`);
-    console.log(`📚 Swagger docs: http://localhost:${port}/api/docs`);
-  } catch (error: any) {
-    if (error.code === 'EADDRINUSE') {
-      console.warn(`⚠️  Port ${port} is currently in use.`);
-      port = port + 1;
-      console.log(`🔄 Trying fallback port ${port}...`);
-      await app.listen(port);
-      console.log(`🚀 Backend running on: http://localhost:${port}/api`);
-      console.log(`📚 Swagger docs: http://localhost:${port}/api/docs`);
-    } else {
-      console.error('Failed to start backend:', error);
-      throw error;
-    }
-  }
+  await app.listen(port);
+  console.log(`🚀 Backend running on: http://localhost:${port}/api`);
+  console.log(`📚 Swagger docs: http://localhost:${port}/api/docs`);
 }
 bootstrap();
 

@@ -574,6 +574,80 @@ export class AdminBookingsService {
     return this.bookingRepo.findOne({ where: { id } }) as Promise<Booking>;
   }
 
+  /**
+   * Admin xác nhận đã nhận tiền chuyển khoản ngân hàng.
+   * - paymentStatus: UNPAID → PAID
+   * - bookingStatus: PENDING → CONFIRMED (nếu đang PENDING)
+   * - paidAt = now
+   * - Lưu history
+   */
+  async confirmBankTransferPayment(
+    id: string,
+    adminId?: string,
+    note?: string,
+  ): Promise<Booking> {
+    const booking = await this.getBookingDetail(id);
+
+    if (booking.payment_method !== 'BANK_TRANSFER') {
+      throw new BadRequestException(
+        'Chỉ có thể xác nhận chuyển khoản cho booking có phương thức BANK_TRANSFER.',
+      );
+    }
+
+    const prevPaymentStatus = booking.payment_status;
+    const prevBookingStatus = booking.booking_status;
+
+    if (prevPaymentStatus === 'PAID') {
+      throw new BadRequestException('Booking này đã được xác nhận thanh toán trước đó.');
+    }
+
+    // Nếu booking đang CANCELLED hoặc EXPIRED thì không cho xác nhận
+    if (
+      prevBookingStatus === BookingStatus.CANCELLED ||
+      prevBookingStatus === BookingStatus.EXPIRED
+    ) {
+      throw new BadRequestException(
+        `Không thể xác nhận thanh toán cho booking ở trạng thái ${prevBookingStatus}.`,
+      );
+    }
+
+    const now = new Date();
+    let newBookingStatus = prevBookingStatus;
+
+    // Nếu đang PENDING thì nâng lên CONFIRMED
+    if (prevBookingStatus === BookingStatus.PENDING) {
+      newBookingStatus = BookingStatus.CONFIRMED;
+    }
+
+    await this.bookingRepo.manager.transaction(async (manager) => {
+      await manager.update(Booking, id, {
+        payment_status: 'PAID' as any,
+        booking_status: newBookingStatus,
+        paidAt: now,
+        updated_at: now,
+      });
+
+      const history = manager.create(BookingHistory, {
+        booking_id: booking.id,
+        admin_id: adminId,
+        action: 'CONFIRM_BANK_PAYMENT',
+        previous_status: prevBookingStatus,
+        new_status: newBookingStatus,
+        note: note || `Admin xác nhận đã nhận tiền chuyển khoản. Booking ${newBookingStatus !== prevBookingStatus ? `→ ${newBookingStatus}` : 'giữ nguyên trạng thái'}`,
+      });
+      await manager.save(history);
+    });
+
+    this.logger.log(
+      `[BANK_PAYMENT_CONFIRMED] bookingId=${id} paymentStatus=PAID bookingStatus=${prevBookingStatus}→${newBookingStatus} adminId=${adminId} at=${now.toISOString()}`,
+    );
+
+    return this.bookingRepo.findOne({
+      where: { id },
+      relations: ['roomCategory', 'room'],
+    }) as Promise<Booking>;
+  }
+
   async getBookingCalendar(query: GetBookingCalendarDto) {
     const start = new Date(query.startDate);
     const end = new Date(query.endDate);

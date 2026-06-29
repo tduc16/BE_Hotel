@@ -16,11 +16,11 @@ import { BookingHistory } from './entities/booking-history.entity';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { RoomCategory } from '../rooms/entities/room-category.entity';
 import { Room } from '../rooms/entities/room.entity';
-import { MailService } from '../mail/mail.service';
-import { randomUUID } from 'crypto';
-
 import { BookingAvailabilityService } from './booking-availability.service';
 import { VouchersService } from '../vouchers/vouchers.service';
+import { EmailService } from '../email/email.service';
+import { BankQrService } from './bank-qr.service';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class BookingsService {
@@ -32,9 +32,10 @@ export class BookingsService {
     @InjectRepository(RoomCategory)
     private roomCategoryRepo: Repository<RoomCategory>,
     private dataSource: DataSource,
-    private mailService: MailService,
+    private emailService: EmailService,
     private readonly bookingAvailabilityService: BookingAvailabilityService,
     private readonly vouchersService: VouchersService,
+    private readonly bankQrService: BankQrService,
   ) {}
 
   /**
@@ -58,16 +59,16 @@ export class BookingsService {
     const currentYear = new Date().getFullYear();
     const pattern = `BK${currentYear}%`;
 
-    // Lấy MAX booking_code trong năm hiện tại
+    // Lấy MAX booking_code sequence dạng INTEGER trong năm hiện tại
     const result = await manager
       .createQueryBuilder(Booking, 'booking')
-      .select('MAX(booking.booking_code)', 'maxCode')
+      .select('MAX(CAST(SUBSTRING(booking.booking_code, 7) AS INTEGER))', 'maxSeq')
       .where('booking.booking_code LIKE :pattern', { pattern })
       .getRawOne();
 
     let newSequence = 1;
-    if (result?.maxCode) {
-      const lastSeq = parseInt(result.maxCode.replace(`BK${currentYear}`, ''), 10);
+    if (result && result.maxSeq !== null && result.maxSeq !== undefined) {
+      const lastSeq = Number(result.maxSeq);
       if (!isNaN(lastSeq)) {
         newSequence = lastSeq + 1;
       }
@@ -94,7 +95,11 @@ export class BookingsService {
       voucherCode,
     } = createBookingDto;
 
-    // ── Validate dates ──────────────────────────────────────────────────────
+    // ── Validate DTO fields ──────────────────────────────────────────────────
+    if (!room_category_id) {
+      throw new BadRequestException('Vui lòng chọn hạng phòng');
+    }
+
     const checkIn = new Date(check_in_date);
     const checkOut = new Date(check_out_date);
 
@@ -113,7 +118,7 @@ export class BookingsService {
     }
 
     if (checkOut <= checkIn) {
-      throw new BadRequestException('Ngày trả phòng phải lớn hơn ngày nhận phòng');
+      throw new BadRequestException('Ngày trả phòng phải sau ngày nhận phòng');
     }
 
     const nightCount = Math.round(
@@ -135,7 +140,7 @@ export class BookingsService {
       });
 
       if (!category) {
-        throw new NotFoundException('Không tìm thấy hạng phòng');
+        throw new NotFoundException('Hạng phòng không tồn tại');
       }
 
       if (!category.is_active) {
@@ -148,9 +153,7 @@ export class BookingsService {
       }
 
       if (guest_count > category.capacity) {
-        throw new BadRequestException(
-          `Số lượng khách vượt quá sức chứa phòng (tối đa ${category.capacity} khách)`,
-        );
+        throw new BadRequestException('Số khách vượt quá sức chứa hạng phòng');
       }
 
       // ── 2. Tính tiền ─────────────────────────────────────────────────────
@@ -200,9 +203,7 @@ export class BookingsService {
       const targetCategory = availCategories.find((c) => c.categoryId === room_category_id);
 
       if (!targetCategory || targetCategory.availableRoomCount <= 0) {
-        throw new BadRequestException(
-          'Hết phòng trong khoảng thời gian này. Vui lòng chọn ngày khác hoặc hạng phòng khác.',
-        );
+        throw new BadRequestException('Hạng phòng đã hết phòng trong khoảng thời gian này');
       }
 
       // ── 4. Gán room_id vật lý ────────────────────────────────────────────
@@ -234,7 +235,13 @@ export class BookingsService {
       let expiredAt: Date | null = null;
 
       if (payment_method === PaymentMethod.CASH) {
+        // Thanh toán khi nhận phòng → Xác nhận ngay
         finalBookingStatus = BookingStatus.CONFIRMED;
+      } else if (payment_method === PaymentMethod.BANK_TRANSFER) {
+        // Chuyển khoản → chờ admin xác nhận
+        finalBookingStatus = BookingStatus.PENDING;
+        expiredAt = new Date();
+        expiredAt.setHours(expiredAt.getHours() + 24); // Hết hạn sau 24h
       } else {
         finalBookingStatus = BookingStatus.PENDING;
         expiredAt = new Date();
@@ -244,6 +251,18 @@ export class BookingsService {
       // ── 7. Tạo booking token ──────────────────────────────────────────────
       const bookingToken = randomUUID();
 
+      // ── 8. Sinh thông tin QR chuyển khoản (nếu BANK_TRANSFER) ─────────────
+      let bankTransferContent: string | null = null;
+      let bankQrUrl: string | null = null;
+
+      if (payment_method === PaymentMethod.BANK_TRANSFER) {
+        bankTransferContent = this.bankQrService.generateTransferContent(bookingCode);
+        bankQrUrl = this.bankQrService.generateQrUrl(finalAmount, bookingCode);
+        this.logger.log(
+          `[BankQR] Generated QR for booking=${bookingCode}, amount=${finalAmount}, content="${bankTransferContent}"`,
+        );
+      }
+
       const newBooking = queryRunner.manager.create(Booking, {
         booking_code: bookingCode,
         booking_token: bookingToken,
@@ -252,7 +271,9 @@ export class BookingsService {
         email,
         note: note ?? undefined,
         room_category_id,
+        roomCategory: { id: room_category_id } as any,
         room_id: assignedRoomId,
+        room: { id: assignedRoomId } as any,
         check_in_date: check_in_date,
         check_out_date: check_out_date,
         guest_count,
@@ -268,6 +289,10 @@ export class BookingsService {
         booking_status: finalBookingStatus,
         expired_at: expiredAt ?? undefined,
         customerId: customerId,
+        bankTransferContent,
+        bankQrUrl,
+        paidAt: null,
+        ...(customerId ? { customer: { id: customerId } as any } : {}),
       });
 
       let savedBooking: Booking;
@@ -286,41 +311,76 @@ export class BookingsService {
           await queryRunner.manager.save('VoucherUsage', usage);
           await queryRunner.manager.increment('Voucher', { id: appliedVoucherId }, 'usedCount', 1);
         }
-      } catch (saveError) {
-        this.logger.error('[BookingCreate] Lỗi khi lưu booking:', saveError);
-        throw new BadRequestException('Lỗi khi lưu thông tin đặt phòng vào CSDL');
+      } catch (saveError: any) {
+        this.logger.error('[BookingCreate] Lỗi khi lưu booking:', {
+          payload: {
+            customer_name,
+            phone,
+            email,
+            note,
+            room_category_id,
+            check_in_date,
+            check_out_date,
+            guest_count,
+            payment_method,
+            voucherCode,
+            customerId,
+          },
+          errorName: saveError.name,
+          errorMessage: saveError.message,
+          errorDetail: saveError.detail,
+          errorCode: saveError.code,
+          errorStack: saveError.stack,
+          query: saveError.query,
+          parameters: saveError.parameters,
+        });
+
+        throw new BadRequestException({
+          message: 'Lỗi khi lưu booking',
+          detail: saveError.message,
+          dbDetail: saveError.detail,
+          code: saveError.code,
+        });
       }
 
       await queryRunner.commitTransaction();
 
       this.logger.log(`[BookingCreate] bookingCode=${bookingCode} created successfully`);
 
-      // Gửi email xác nhận (async, không block response)
-      this.mailService
-        .sendBookingConfirmation({
-          customerName: customer_name,
-          email,
-          bookingCode,
-          bookingToken,
-          roomName: category.name,
-          roomNumber: availableRoom.room_number ?? undefined,
-          checkInDate: check_in_date,
-          checkOutDate: check_out_date,
-          guestCount: guest_count,
-          nightCount,
-          totalAmount: finalAmount,
-          paymentMethod: payment_method,
-          paymentStatus: finalPaymentStatus,
-          bookingStatus: finalBookingStatus,
-        })
-        .catch((err) =>
-          this.logger.error('[MAIL_ASYNC_ERROR] Lỗi gửi email xác nhận booking:', err),
-        );
+      // Reload booking với relations đầy đủ để gửi email
+      let bookingForEmail = savedBooking;
+      try {
+        const reloaded = await this.bookingRepo.findOne({
+          where: { id: savedBooking.id },
+          relations: ['roomCategory', 'room', 'voucher'],
+        });
+        if (reloaded) {
+          bookingForEmail = reloaded;
+        }
+      } catch (reloadErr) {
+        this.logger.error('[BookingEmail] Lỗi khi reload booking:', reloadErr);
+      }
+
+      // Gửi email xác nhận (không làm hỏng luồng phản hồi đặt phòng)
+      try {
+        await this.emailService.sendBookingConfirmationEmail(bookingForEmail.email, bookingForEmail);
+        this.logger.log(`[BookingEmail] Sent booking confirmation to ${bookingForEmail.email}`);
+      } catch (error: any) {
+        this.logger.error(`[BookingEmail] Failed to send email to ${bookingForEmail.email}`, error.stack);
+      }
+
+      // Lấy bankInfo để trả về cùng response
+      const bankInfo = payment_method === PaymentMethod.BANK_TRANSFER
+        ? this.bankQrService.getBankInfo()
+        : null;
 
       return {
         ...savedBooking,
         roomName: category.name,
         roomNumber: availableRoom.room_number,
+        bankInfo,
+        bankTransferContent,
+        bankQrUrl,
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
